@@ -1,0 +1,10 @@
+apps/web/node_modules/
+apps/web/dist/
+server/.venv/
+server/storage/
+server/*.db
+server/*.egg-info/
+server/.pytest_cache/
+server/**/__pycache__/
+logs/
+docs/source_material/private/

@@ -1,0 +1,66 @@
+{
+  "country_pack_id": "belgium_peppol",
+  "display_name": "Belgium / Peppol BIS Billing 3.0",
+  "country_code": "BE",
+  "pack_version": "0.6.0",
+  "support_level": "generator_basic",
+  "v1_boundary": "Generate Peppol-style UBL XML only. No live Peppol transmission, no access point, no Mercurius submission, no authority or recipient acceptance guarantee.",
+  "v1_boundary_warning": "Belgium V1 output is not transmitted through Peppol, does not connect to an access point, does not submit to Mercurius and does not confirm live delivery.",
+  "output_profiles": [
+    "peppol_bis_billing_3_0_ubl_invoice"
+  ],
+  "default_output_profile": "peppol_bis_billing_3_0_ubl_invoice",
+  "requires_pdf": false,
+  "requires_qr": false,
+  "requires_signature": false,
+  "requires_live_submission_for_validity": false,
+  "live_submission_supported": false,
+  "official_artefact_validation": "not_configured",
+  "legal_regime_summary": "Belgium requires structured e-invoicing for in-scope B2B transactions from 1 January 2026, alongside the existing B2G e-invoicing context. The regime is built around structured, machine-readable invoice exchange rather than PDF/email-only invoicing.",
+  "scope": [
+    "Belgian B2B structured e-invoicing applies to in-scope domestic business transactions from 1 January 2026.",
+    "Belgian B2G e-invoicing already provides the public-sector context for structured invoice exchange.",
+    "The V1 workbench scenario remains a domestic Belgian B2B services invoice with one VAT rate."
+  ],
+  "mandatory_format": [
+    "The expected structured invoice standard is EN 16931.",
+    "Peppol BIS Billing 3.0 is the default structured invoice profile for this pack.",
+    "PDF or email alone is not sufficient for in-scope structured e-invoicing.",
+    "Alternative structured formats may be used only where permitted and agreed by the trading parties."
+  ],
+  "transmission_or_clearance_model": [
+    "Peppol is the default exchange network for Belgian structured e-invoicing.",
+    "Transmission requires delivery through Peppol/access point infrastructure or another agreed structured exchange route where permitted.",
+    "Belgium does not use a tax authority clearance or pre-approval model like Saudi Arabia."
+  ],
+  "qr_signature_requirements": [
+    "No QR code is required for the Belgian Peppol V1 scenario.",
+    "No production cryptographic signing requirement is modelled in the Belgian V1 pack."
+  ],
+  "retention_or_audit_notes": [
+    "The audit trail should record the source upload, canonical invoice JSON, selected pack version, validation results, warnings and generated artefact hashes.",
+    "Official artefact validation must remain not configured until complete validator artefacts are installed and run."
+  ],
+  "v1_app_capability": [
+    "Milestone 1 loads this pack, validates workbook scaffolding, builds canonical invoice JSON and previews the evidence bundle skeleton.",
+    "Belgium XML generation is intentionally not implemented in Milestone 1.",
+    "No Peppol transmission, access point connection or Mercurius submission is available in this app."
+  ],
+  "official_sources": [
+    {
+      "label": "Belgium e-invoicing build pack source inventory",
+      "url": "docs/13_source_material_inventory.md"
+    },
+    {
+      "label": "Belgium Peppol pack specification",
+      "url": "docs/06_belgium_peppol_pack_spec.md"
+    }
+  ],
+  "boundary_highlights": [
+    "Not transmitted through Peppol.",
+    "No access point or Mercurius submission.",
+    "No live recipient acceptance guarantee."
+  ],
+  "last_reviewed": "2026-06-24"
+}
+

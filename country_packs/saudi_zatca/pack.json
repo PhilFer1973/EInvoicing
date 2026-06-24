@@ -1,0 +1,73 @@
+{
+  "country_pack_id": "saudi_zatca",
+  "display_name": "Saudi Arabia / ZATCA",
+  "country_code": "SA",
+  "pack_version": "0.3.0",
+  "support_level": "generator_basic",
+  "v1_boundary": "Generate ZATCA-style XML, Arabic/bilingual visual PDF and QR only. No FATOORA submission, no clearance, no reporting, no production cryptographic stamp, no live-valid Saudi tax invoice claim.",
+  "v1_boundary_warning": "This file has not been submitted to ZATCA/FATOORA and is not a cleared Saudi tax invoice. No ZATCA clearance stamp or production cryptographic stamp has been applied.",
+  "output_profiles": [
+    "zatca_standard_tax_invoice_xml_plus_arabic_visual_pdf"
+  ],
+  "default_output_profile": "zatca_standard_tax_invoice_xml_plus_arabic_visual_pdf",
+  "requires_pdf": true,
+  "requires_qr": true,
+  "requires_signature": true,
+  "requires_live_submission_for_validity": true,
+  "live_clearance_supported": false,
+  "production_signing_supported": false,
+  "official_artefact_validation": "not_configured",
+  "legal_regime_summary": "Saudi Arabia's ZATCA/FATOORA regime converts invoice issuing into structured electronic exchange through compliant e-invoicing solutions. Phase One covers generation requirements and Phase Two covers integration with ZATCA systems.",
+  "scope": [
+    "Phase One generation requirements started on 4 December 2021.",
+    "Phase Two integration requirements started on 1 January 2023 and are rolled out by taxpayer waves.",
+    "The V1 workbench scenario is a Saudi standard B2B tax invoice."
+  ],
+  "mandatory_format": [
+    "Formal Saudi e-invoice artefacts use the prescribed XML syntax or PDF/A-3 with embedded XML where applicable.",
+    "The invoice content must satisfy ZATCA data dictionary and XML implementation requirements.",
+    "Standard tax invoices and simplified tax invoices follow different authority workflows."
+  ],
+  "transmission_or_clearance_model": [
+    "Standard B2B tax invoices follow the clearance model.",
+    "A standard B2B invoice must be submitted to ZATCA/FATOORA before it is shared with the buyer.",
+    "ZATCA validates the invoice and applies or returns the clearance stamp and QR update.",
+    "Simplified invoices follow a reporting model rather than the standard-invoice clearance model."
+  ],
+  "qr_signature_requirements": [
+    "QR code content is required under the Saudi e-invoicing regime.",
+    "Production security features include cryptographic stamp/signature requirements.",
+    "The production previous-invoice-hash chain and certificate/CSID flows are outside this Milestone 1 app."
+  ],
+  "retention_or_audit_notes": [
+    "The evidence bundle must retain the source upload, canonical invoice JSON, validation report, country pack manifest, hashes and clear V1 boundary warnings.",
+    "Official ZATCA SDK/toolbox or authority validation must remain not configured until a real validator or authority workflow is integrated."
+  ],
+  "v1_app_capability": [
+    "Milestone 1 loads this pack, validates workbook scaffolding, builds canonical invoice JSON and previews the evidence bundle skeleton.",
+    "Saudi XML, Arabic/bilingual visual PDF, QR and ZIP generation are intentionally not implemented in Milestone 1.",
+    "This app does not submit, clear, report, obtain authority stamps or create production signatures."
+  ],
+  "official_sources": [
+    {
+      "label": "ZATCA E-Invoicing overview",
+      "url": "https://zatca.gov.sa/en/E-Invoicing/Pages/default.aspx"
+    },
+    {
+      "label": "ZATCA E-Invoice specifications",
+      "url": "https://zatca.gov.sa/en/E-Invoicing/SystemsDevelopers/Pages/E-Invoice-specifications.aspx"
+    },
+    {
+      "label": "ZATCA security requirements",
+      "url": "https://zatca.gov.sa/en/E-Invoicing/SystemsDevelopers/Pages/Security-Requirements.aspx"
+    }
+  ],
+  "boundary_highlights": [
+    "Not submitted to FATOORA.",
+    "No ZATCA clearance stamp.",
+    "Not a cleared Saudi tax invoice.",
+    "No production cryptographic stamp."
+  ],
+  "last_reviewed": "2026-06-24"
+}
+

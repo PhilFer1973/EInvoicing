@@ -1,0 +1,16 @@
+{
+  "country_pack_id": "belgium_peppol",
+  "display_name": "Belgium / Peppol BIS Billing 3.0",
+  "country_code": "BE",
+  "pack_version": "0.6.0",
+  "support_level": "generator_basic",
+  "v1_boundary": "Generate Peppol-style UBL XML only. No live Peppol transmission, no access point, no Mercurius submission, no authority or recipient acceptance guarantee.",
+  "output_profiles": [
+    "peppol_bis_billing_3_0_ubl_invoice"
+  ],
+  "requires_pdf": false,
+  "requires_qr": false,
+  "requires_signature": false,
+  "requires_live_submission_for_validity": false,
+  "last_reviewed": "2026-06-24"
+}

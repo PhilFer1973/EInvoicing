@@ -1,0 +1,50 @@
+{
+  "country_pack_id": "uk_info",
+  "display_name": "United Kingdom / Information Only",
+  "country_code": "GB",
+  "pack_version": "0.1.0",
+  "support_level": "info_only",
+  "v1_boundary": "Information-only placeholder. No e-invoice generation, validation artefact execution, live submission or authority acceptance claim.",
+  "v1_boundary_warning": "UK is information-only in this app. No V1 file generation, validation artefact execution or authority submission is available.",
+  "output_profiles": [],
+  "default_output_profile": null,
+  "requires_pdf": false,
+  "requires_qr": false,
+  "requires_signature": false,
+  "requires_live_submission_for_validity": false,
+  "live_submission_supported": false,
+  "official_artefact_validation": "not_configured",
+  "legal_regime_summary": "The UK pack is an information-only placeholder in this workbench. It records regime status separately from generator capability and does not enable V1 output generation.",
+  "scope": [
+    "No UK V1 e-invoice file generation scenario is implemented in this app.",
+    "The pack exists to prove that the country-pack model can support non-generating regimes."
+  ],
+  "mandatory_format": [
+    "No mandatory UK output format is configured for V1 generation in this app."
+  ],
+  "transmission_or_clearance_model": [
+    "No UK transmission, clearance, reporting or authority workflow is configured in V1."
+  ],
+  "qr_signature_requirements": [
+    "No UK QR or production signature requirement is configured for this info-only pack."
+  ],
+  "retention_or_audit_notes": [
+    "The app should still record pack selection and boundary status if a user views this pack.",
+    "Generation controls must remain disabled for information-only packs."
+  ],
+  "v1_app_capability": [
+    "Information panel only.",
+    "No workbook-to-output generation profile is available for UK in Milestone 1."
+  ],
+  "official_sources": [
+    {
+      "label": "Open items and deferred country packs",
+      "url": "docs/14_open_items_and_deferred_scope.md"
+    }
+  ],
+  "boundary_highlights": [
+    "Information only.",
+    "Generation disabled."
+  ],
+  "last_reviewed": "2026-06-24"
+}

@@ -1,0 +1,25 @@
+:root {
+  --canvas: #F2F0FF;
+  --surface: rgba(255, 255, 255, 0.78);
+  --surface-strong: rgba(255, 255, 255, 0.92);
+  --surface-muted: rgba(249, 250, 255, 0.84);
+  --hairline: rgba(94, 82, 196, 0.18);
+  --hairline-strong: rgba(84, 74, 190, 0.32);
+  --ink: #15182A;
+  --ink-soft: #33384C;
+  --muted: #5E6378;
+  --muted-light: #7A8095;
+  --accent-violet: #7D3CFF;
+  --accent-violet-deep: #4D31D1;
+  --accent-cyan: #16D8D2;
+  --accent-cyan-deep: #008E9A;
+  --success: #2F8F6B;
+  --warning: #B98020;
+  --danger: #B64A5A;
+  --radius-lg: 22px;
+  --radius-md: 16px;
+  --radius-sm: 10px;
+  --shadow-soft: 0 26px 70px rgba(47, 38, 126, 0.16);
+  --shadow-card: 0 16px 42px rgba(52, 43, 132, 0.12);
+  --gradient-accent: linear-gradient(135deg, #7D3CFF 0%, #16D8D2 100%);
+}

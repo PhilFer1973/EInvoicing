@@ -1,0 +1,18 @@
+{
+  "country_pack_id": "saudi_zatca",
+  "display_name": "Saudi Arabia / ZATCA",
+  "country_code": "SA",
+  "pack_version": "0.3.0",
+  "support_level": "generator_basic",
+  "v1_boundary": "Generate ZATCA-style XML, Arabic/bilingual visual PDF and QR only. No FATOORA submission, no clearance, no reporting, no production cryptographic stamp, no live-valid Saudi tax invoice claim.",
+  "output_profiles": [
+    "zatca_standard_tax_invoice_xml_plus_arabic_visual_pdf"
+  ],
+  "requires_pdf": true,
+  "requires_qr": true,
+  "requires_signature": true,
+  "requires_live_submission_for_validity": true,
+  "live_clearance_supported": false,
+  "production_signing_supported": false,
+  "last_reviewed": "2026-06-24"
+}
