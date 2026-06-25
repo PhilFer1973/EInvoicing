@@ -1,7 +1,16 @@
 import { Archive, ListChecks, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { canonicalInvoiceDownloadUrl, canonicalInvoiceUrl, evidenceBundleDownloadUrl, validateUpload } from "../services/api";
+import {
+  canonicalInvoiceDownloadUrl,
+  canonicalInvoiceUrl,
+  evidenceBundleDownloadUrl,
+  fetchGeneratedXml,
+  generateOutput,
+  generatedXmlDownloadUrl,
+  generatedXmlUrl,
+  validateUpload
+} from "../services/api";
 import type { CountryPack, UploadRecord, ValidationReport } from "../types";
 
 interface ReviewExportPanelProps {
@@ -10,9 +19,9 @@ interface ReviewExportPanelProps {
   onUploadRecordChange?: (record: UploadRecord) => void;
 }
 
-type DetailView = "validation" | "canonical" | "lines" | null;
+type DetailView = "validation" | "canonical" | "lines" | "xml" | null;
 
-export function ReviewExportPanel({ uploadRecord, onUploadRecordChange }: ReviewExportPanelProps) {
+export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: ReviewExportPanelProps) {
   const canonical = uploadRecord?.canonical_invoice;
   const invoice = canonical?.invoice ?? {};
   const seller = canonical?.seller ?? {};
@@ -22,11 +31,20 @@ export function ReviewExportPanel({ uploadRecord, onUploadRecordChange }: Review
   const [detailView, setDetailView] = useState<DetailView>(null);
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(uploadRecord?.validation_report ?? null);
   const [isValidating, setIsValidating] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedXml, setGeneratedXml] = useState("");
+  const [generationError, setGenerationError] = useState("");
   const canExportZip = Boolean(uploadRecord?.evidence_bundle_preview.files.length);
+  const canGenerate =
+    pack?.country_pack_id === "belgium_peppol" &&
+    Boolean(uploadRecord?.canonical_invoice) &&
+    (validationReport?.summary.blocking_errors ?? 1) === 0;
 
   useEffect(() => {
     setValidationReport(uploadRecord?.validation_report ?? null);
     setDetailView(null);
+    setGeneratedXml("");
+    setGenerationError("");
   }, [uploadRecord?.upload_id]);
 
   async function handleValidate() {
@@ -41,6 +59,29 @@ export function ReviewExportPanel({ uploadRecord, onUploadRecordChange }: Review
       setDetailView("validation");
     } finally {
       setIsValidating(false);
+    }
+  }
+
+  async function handleGenerate() {
+    if (!uploadRecord || !canGenerate) return;
+    setIsGenerating(true);
+    setGenerationError("");
+    try {
+      const evidence = await generateOutput(uploadRecord.upload_id);
+      const xmlFile = evidence.files.find((file) => file.filename === "invoice.xml");
+      onUploadRecordChange?.({
+        ...uploadRecord,
+        status: "generated",
+        evidence_bundle_preview: evidence,
+        generated_xml_path: xmlFile?.storage_path ?? uploadRecord.generated_xml_path,
+        generated_xml_sha256_hash: xmlFile?.sha256 ?? uploadRecord.generated_xml_sha256_hash
+      });
+      setGeneratedXml(await fetchGeneratedXml(uploadRecord.upload_id));
+      setDetailView("xml");
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : "XML generation failed");
+    } finally {
+      setIsGenerating(false);
     }
   }
 
@@ -70,14 +111,16 @@ export function ReviewExportPanel({ uploadRecord, onUploadRecordChange }: Review
           {isValidating ? "Validating" : "Validate"}
         </button>
         <button
-          className="button-secondary action-button unavailable"
-          disabled
-          title="Generation is unavailable in Milestone 2A."
+          className="button-secondary action-button"
+          disabled={!canGenerate || isGenerating}
+          onClick={() => void handleGenerate()}
+          title={canGenerate ? "Generate Belgium Peppol-style UBL XML." : "Resolve blocking validation errors before generation."}
           type="button"
         >
           <Sparkles aria-hidden="true" size={17} />
-          Generate
+          {isGenerating ? "Generating" : "Generate"}
         </button>
+        {generationError ? <p className="action-error">{generationError}</p> : null}
         {uploadRecord && canExportZip ? (
           <a className="button-primary action-button export-zip-button" href={evidenceBundleDownloadUrl(uploadRecord.upload_id)}>
             <Archive aria-hidden="true" size={17} />
@@ -98,6 +141,7 @@ export function ReviewExportPanel({ uploadRecord, onUploadRecordChange }: Review
           onClose={() => setDetailView(null)}
           uploadRecord={uploadRecord}
           validationReport={validationReport}
+          xml={generatedXml}
         />
       ) : null}
     </section>
@@ -109,15 +153,24 @@ function DetailModal({
   lines,
   onClose,
   uploadRecord,
-  validationReport
+  validationReport,
+  xml
 }: {
   detailView: Exclude<DetailView, null>;
   lines: Array<Record<string, unknown>>;
   onClose: () => void;
   uploadRecord: UploadRecord | null;
   validationReport: ValidationReport | null;
+  xml: string;
 }) {
-  const title = detailView === "validation" ? "Validation Details" : detailView === "canonical" ? "Canonical JSON" : "Invoice Lines";
+  const title =
+    detailView === "validation"
+      ? "Validation Details"
+      : detailView === "canonical"
+        ? "Canonical JSON"
+        : detailView === "xml"
+          ? "Generated XML"
+          : "Invoice Lines";
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose} role="presentation">
@@ -131,7 +184,27 @@ function DetailModal({
         {detailView === "validation" ? <ValidationDetails report={validationReport} /> : null}
         {detailView === "canonical" ? <CanonicalDetails uploadRecord={uploadRecord} /> : null}
         {detailView === "lines" ? <InvoiceLineDetails lines={lines} /> : null}
+        {detailView === "xml" ? <XmlDetails uploadRecord={uploadRecord} xml={xml} /> : null}
       </section>
+    </div>
+  );
+}
+
+function XmlDetails({ uploadRecord, xml }: { uploadRecord: UploadRecord | null; xml: string }) {
+  if (!uploadRecord) {
+    return <p className="muted compact">Generated XML is available after successful Belgium generation.</p>;
+  }
+  if (!uploadRecord?.generated_xml_path && !xml) {
+    return <p className="muted compact">Generated XML is available after successful Belgium generation.</p>;
+  }
+
+  return (
+    <div className="modal-stack">
+      <div className="modal-link-row">
+        <a href={generatedXmlUrl(uploadRecord.upload_id)} target="_blank" rel="noreferrer">Open XML</a>
+        <a href={generatedXmlDownloadUrl(uploadRecord.upload_id)}>Download XML</a>
+      </div>
+      <pre className="json-preview">{xml || "Generated XML is stored and available from the links above."}</pre>
     </div>
   );
 }
@@ -144,10 +217,10 @@ function ValidationDetails({ report }: { report: ValidationReport | null }) {
   return (
     <div className="modal-stack">
       <div className="validation-summary-row">
-        <span>{report.summary.blocking_errors} blocking errors</span>
-        <span>{report.summary.warnings_ack_required} acknowledgements</span>
-        <span>{report.summary.warnings} warnings</span>
-        <span>{report.summary.passed_checks} passed</span>
+        <span><strong>{report.summary.blocking_errors}</strong>Block</span>
+        <span><strong>{report.summary.warnings_ack_required}</strong>Ack</span>
+        <span><strong>{report.summary.warnings}</strong>Warning</span>
+        <span><strong>{report.summary.passed_checks}</strong>Passed</span>
       </div>
       <div className="validation-result-list">
         {report.results.map((result, index) => (

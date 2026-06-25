@@ -2,7 +2,7 @@
   "country_pack_id": "belgium_peppol",
   "display_name": "Belgium / Peppol BIS Billing 3.0",
   "country_code": "BE",
-  "pack_version": "0.6.0",
+  "pack_version": "0.7.0",
   "support_level": "generator_basic",
   "v1_boundary": "Generate Peppol-style UBL XML only. No live Peppol transmission, no access point, no Mercurius submission, no authority or recipient acceptance guarantee.",
   "v1_boundary_warning": "Belgium V1 output is not transmitted through Peppol, does not connect to an access point, does not submit to Mercurius and does not confirm live delivery.",
@@ -42,8 +42,8 @@
     "Official artefact validation must remain not configured until complete validator artefacts are installed and run."
   ],
   "v1_app_capability": [
-    "Milestone 1 loads this pack, validates workbook scaffolding, builds canonical invoice JSON and previews the evidence bundle skeleton.",
-    "Belgium XML generation is intentionally not implemented in Milestone 1.",
+    "Milestone 2B validates the Belgium workbook, builds canonical invoice JSON and generates Peppol-style UBL XML from the canonical invoice only.",
+    "Generated Belgium XML is included in the local evidence bundle with workbook snapshot, canonical JSON, validation report and hashes.",
     "No Peppol transmission, access point connection or Mercurius submission is available in this app."
   ],
   "official_sources": [
@@ -63,4 +63,3 @@
   ],
   "last_reviewed": "2026-06-24"
 }
-

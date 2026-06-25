@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
 from httpx import ASGITransport, AsyncClient
@@ -155,6 +156,61 @@ async def test_evidence_zip_download_contains_skeleton_artefacts(client: AsyncCl
         assert "country_pack_manifest.json" in names
         assert "hashes.txt" in names
         assert "invoice.xml" not in names
+
+
+async def test_valid_belgium_sample_generates_xml(client: AsyncClient) -> None:
+    payload = await _upload_belgium_workbook(client, belgium_valid_workbook_bytes())
+
+    generate_response = await client.post(f"/api/uploads/{payload['upload_id']}/generate")
+
+    assert generate_response.status_code == 200
+    evidence_files = {file["filename"]: file for file in generate_response.json()["files"]}
+    assert evidence_files["invoice.xml"]["status"] == "stored"
+    assert evidence_files["invoice.xml"]["sha256"]
+    assert evidence_files["invoice.xml"]["storage_path"].endswith("_belgium_peppol_invoice.xml")
+
+
+async def test_generated_xml_contains_expected_belgium_values(client: AsyncClient) -> None:
+    payload = await _upload_belgium_workbook(client, belgium_valid_workbook_bytes())
+    await client.post(f"/api/uploads/{payload['upload_id']}/generate")
+
+    xml_response = await client.get(f"/api/uploads/{payload['upload_id']}/generated-xml")
+    xml = xml_response.text
+
+    assert xml_response.status_code == 200
+    ET.fromstring(xml)
+    assert "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" in xml
+    assert "<cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</cbc:CustomizationID>" in xml
+    assert "<cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>" in xml
+    assert "<cbc:ID>INV-BE-2026-001</cbc:ID>" in xml
+    assert "<cbc:CompanyID>BE0123456789</cbc:CompanyID>" in xml
+    assert "<cbc:CompanyID>BE0987654321</cbc:CompanyID>" in xml
+    assert "<cbc:BuyerReference>BE-BUYER-REF-001</cbc:BuyerReference>" in xml
+    assert '<cbc:TaxAmount currencyID="EUR">210.00</cbc:TaxAmount>' in xml
+    assert '<cbc:PayableAmount currencyID="EUR">1210.00</cbc:PayableAmount>' in xml
+
+
+async def test_evidence_zip_includes_generated_belgium_xml_after_generation(client: AsyncClient) -> None:
+    payload = await _upload_belgium_workbook(client, belgium_valid_workbook_bytes())
+    await client.post(f"/api/uploads/{payload['upload_id']}/generate")
+
+    response = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
+
+    assert response.status_code == 200
+    with ZipFile(BytesIO(response.content)) as archive:
+        names = set(archive.namelist())
+        assert "invoice.xml" in names
+        xml = archive.read("invoice.xml").decode("utf-8")
+        assert "INV-BE-2026-001" in xml
+
+
+async def test_generation_is_blocked_when_validation_has_blocking_errors(client: AsyncClient) -> None:
+    payload = await _upload_belgium_workbook(client, belgium_valid_workbook_bytes(invoice_number=None))
+
+    response = await client.post(f"/api/uploads/{payload['upload_id']}/generate")
+
+    assert response.status_code == 409
+    assert "Blocking validation errors" in response.text
 
 
 async def test_missing_seller_vat_is_blocking(client: AsyncClient) -> None:

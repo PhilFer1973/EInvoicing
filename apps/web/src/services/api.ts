@@ -18,6 +18,14 @@ export function evidenceBundleDownloadUrl(uploadId: string): string {
   return `${API_BASE_URL}/api/uploads/${uploadId}/evidence-bundle/download`;
 }
 
+export function generatedXmlUrl(uploadId: string): string {
+  return `${API_BASE_URL}/api/uploads/${uploadId}/generated-xml`;
+}
+
+export function generatedXmlDownloadUrl(uploadId: string): string {
+  return `${API_BASE_URL}/api/uploads/${uploadId}/generated-xml/download`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, init);
   if (!response.ok) {
@@ -46,6 +54,21 @@ export async function validateUpload(uploadId: string): Promise<ValidationReport
   return request<ValidationReport>(`/api/uploads/${uploadId}/validate`, {
     method: "POST"
   });
+}
+
+export async function generateOutput(uploadId: string): Promise<UploadRecord["evidence_bundle_preview"]> {
+  return request<UploadRecord["evidence_bundle_preview"]>(`/api/uploads/${uploadId}/generate`, {
+    method: "POST"
+  });
+}
+
+export async function fetchGeneratedXml(uploadId: string): Promise<string> {
+  const response = await fetch(generatedXmlUrl(uploadId));
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Request failed with status ${response.status}`);
+  }
+  return response.text();
 }
 
 export async function fetchAuditEntries(): Promise<AuditEntry[]> {

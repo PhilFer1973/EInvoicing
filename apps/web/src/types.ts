@@ -114,6 +114,8 @@ export interface UploadRecord {
   stored_workbook_path: string | null;
   canonical_json_path: string | null;
   validation_report_path: string | null;
+  generated_xml_path: string | null;
+  generated_xml_sha256_hash: string | null;
   canonical_invoice: CanonicalInvoice | null;
   validation_report: ValidationReport;
   evidence_bundle_preview: EvidenceBundlePreview;

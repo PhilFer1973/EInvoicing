@@ -7,14 +7,14 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app.adapters.registry import get_adapter
 from app.models.canonical import CanonicalInvoice
 from app.models.upload import EvidenceBundlePreview, UploadRecord
 from app.models.validation import ValidationReport
 from app.services.country_packs import CountryPackNotFound, get_country_pack
 from app.services.upload_store import get_upload, save_upload
+from app.services.ubl_xml import generate_belgium_ubl_invoice_xml
 from app.services.workbook import parse_workbook_upload
-from app.storage.file_store import storage_path_from_relative
+from app.storage.file_store import relative_storage_path, save_binary, storage_path_from_relative
 
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -93,6 +93,7 @@ def download_evidence_bundle(upload_id: str) -> StreamingResponse:
         _write_stored_file(archive, "source_upload_snapshot.xlsx", record.stored_workbook_path)
         _write_stored_file(archive, "canonical_invoice.json", record.canonical_json_path)
         _write_stored_file(archive, "validation_report.json", record.validation_report_path)
+        _write_stored_file(archive, "invoice.xml", record.generated_xml_path)
         archive.writestr(
             "evidence.json",
             json.dumps(record.evidence_bundle_preview.model_dump(mode="json"), indent=2, sort_keys=True),
@@ -107,15 +108,48 @@ def download_evidence_bundle(upload_id: str) -> StreamingResponse:
 
 
 @router.post("/{upload_id}/generate", response_model=EvidenceBundlePreview)
-def generate_placeholder(upload_id: str) -> EvidenceBundlePreview:
+def generate_output(upload_id: str) -> EvidenceBundlePreview:
     record = get_upload(upload_id)
     if not record:
         raise HTTPException(status_code=404, detail="Upload not found.")
-    adapter = get_adapter(record.selected_country_pack)
-    evidence = adapter.build_output_placeholder(record.canonical_invoice)
-    evidence.generation_id = record.evidence_bundle_preview.generation_id
-    evidence.status = "not_implemented_milestone_1"
-    return evidence
+    if record.selected_country_pack != "belgium_peppol":
+        raise HTTPException(status_code=400, detail="Milestone 2B only supports Belgium / Peppol XML generation.")
+    if not record.canonical_invoice:
+        raise HTTPException(status_code=400, detail="Canonical invoice JSON is required before XML generation.")
+    if record.validation_report.summary.blocking_errors > 0:
+        raise HTTPException(status_code=409, detail="Blocking validation errors must be resolved before XML generation.")
+
+    xml_content = generate_belgium_ubl_invoice_xml(record.canonical_invoice)
+    xml_path, xml_hash = save_binary("generated", f"{upload_id}_belgium_peppol_invoice.xml", xml_content)
+    record.generated_xml_path = relative_storage_path(xml_path)
+    record.generated_xml_sha256_hash = xml_hash
+    record.status = "generated"
+    record.evidence_bundle_preview.status = "xml_generated_milestone_2b"
+    _mark_generated_xml(record)
+    save_upload(record)
+    return record.evidence_bundle_preview
+
+
+@router.get("/{upload_id}/generated-xml")
+def read_generated_xml(upload_id: str) -> FileResponse:
+    record = get_upload(upload_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Upload not found.")
+    if not record.generated_xml_path:
+        raise HTTPException(status_code=404, detail="Generated XML is not available for this upload.")
+    path = storage_path_from_relative(record.generated_xml_path)
+    return FileResponse(path, media_type="application/xml")
+
+
+@router.get("/{upload_id}/generated-xml/download")
+def download_generated_xml(upload_id: str) -> FileResponse:
+    record = get_upload(upload_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Upload not found.")
+    if not record.generated_xml_path:
+        raise HTTPException(status_code=404, detail="Generated XML is not available for this upload.")
+    path = storage_path_from_relative(record.generated_xml_path)
+    return FileResponse(path, media_type="application/xml", filename=f"{upload_id}_belgium_peppol_invoice.xml")
 
 
 def _write_stored_file(archive: ZipFile, archive_name: str, relative_path: str | None) -> None:
@@ -131,3 +165,12 @@ def _hash_manifest(record: UploadRecord) -> str:
     for file in record.evidence_bundle_preview.files:
         lines.append(f"{file.filename}\t{file.sha256 or 'not_available'}\t{file.status}")
     return "\n".join(lines) + "\n"
+
+
+def _mark_generated_xml(record: UploadRecord) -> None:
+    for file in record.evidence_bundle_preview.files:
+        if file.filename == "invoice.xml":
+            file.status = "stored"
+            file.sha256 = record.generated_xml_sha256_hash
+            file.storage_path = record.generated_xml_path
+            return

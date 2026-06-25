@@ -33,6 +33,8 @@ class UploadRecord(BaseModel):
     stored_workbook_path: str | None = None
     canonical_json_path: str | None = None
     validation_report_path: str | None = None
+    generated_xml_path: str | None = None
+    generated_xml_sha256_hash: str | None = None
     canonical_invoice: CanonicalInvoice | None = None
     validation_report: ValidationReport
     evidence_bundle_preview: EvidenceBundlePreview
