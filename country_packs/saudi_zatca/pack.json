@@ -2,10 +2,10 @@
   "country_pack_id": "saudi_zatca",
   "display_name": "Saudi Arabia / ZATCA",
   "country_code": "SA",
-  "pack_version": "0.3.0",
-  "support_level": "generator_basic",
-  "v1_boundary": "Generate ZATCA-style XML, Arabic/bilingual visual PDF and QR only. No FATOORA submission, no clearance, no reporting, no production cryptographic stamp, no live-valid Saudi tax invoice claim.",
-  "v1_boundary_warning": "This file has not been submitted to ZATCA/FATOORA and is not a cleared Saudi tax invoice. No ZATCA clearance stamp or production cryptographic stamp has been applied.",
+  "pack_version": "0.4.0",
+  "support_level": "validation_foundation",
+  "v1_boundary": "Milestone 3A validates the Saudi workbook and canonical invoice foundation only. No Saudi XML, QR, PDF/A-3, FATOORA submission, clearance, reporting, production cryptographic stamp or live-valid Saudi tax invoice claim.",
+  "v1_boundary_warning": "Saudi V1 has not submitted to ZATCA/FATOORA, has not cleared standard B2B invoices, has not reported simplified invoices, has not applied a ZATCA clearance stamp and has not created production cryptographic signatures. Generated outputs are not live-valid Saudi B2B tax invoices.",
   "output_profiles": [
     "zatca_standard_tax_invoice_xml_plus_arabic_visual_pdf"
   ],
@@ -44,8 +44,8 @@
     "Official ZATCA SDK/toolbox or authority validation must remain not configured until a real validator or authority workflow is integrated."
   ],
   "v1_app_capability": [
-    "Milestone 1 loads this pack, validates workbook scaffolding, builds canonical invoice JSON and previews the evidence bundle skeleton.",
-    "Saudi XML, Arabic/bilingual visual PDF, QR and ZIP generation are intentionally not implemented in Milestone 1.",
+    "Milestone 3A loads this pack, validates the Saudi workbook and canonical invoice JSON foundation and builds the local evidence bundle skeleton.",
+    "Saudi XML, Arabic/bilingual visual PDF, QR, clearance, reporting and production signing are intentionally not implemented in Milestone 3A.",
     "This app does not submit, clear, report, obtain authority stamps or create production signatures."
   ],
   "official_sources": [
@@ -63,11 +63,12 @@
     }
   ],
   "boundary_highlights": [
-    "Not submitted to FATOORA.",
+    "No FATOORA submission.",
+    "No standard B2B clearance.",
+    "No simplified invoice reporting.",
     "No ZATCA clearance stamp.",
-    "Not a cleared Saudi tax invoice.",
-    "No production cryptographic stamp."
+    "No production cryptographic signature.",
+    "Not a live-valid Saudi B2B tax invoice."
   ],
-  "last_reviewed": "2026-06-24"
+  "last_reviewed": "2026-06-25"
 }
-

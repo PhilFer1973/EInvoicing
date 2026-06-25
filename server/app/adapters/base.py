@@ -43,12 +43,13 @@ class CountryAdapter:
             EvidenceFile(filename="hashes.txt", status="pending_generation"),
         ]
         if self.pack.support_level != "info_only":
-            files.insert(0, EvidenceFile(filename="invoice.xml", status="not_generated_milestone_1"))
+            xml_status = "not_implemented_milestone_3a" if self.pack.country_pack_id == "saudi_zatca" else "pending_generation"
+            files.insert(0, EvidenceFile(filename="invoice.xml", status=xml_status))
         if self.pack.requires_pdf:
-            files.insert(1, EvidenceFile(filename="invoice_arabic_bilingual_visual.pdf", status="not_generated_milestone_1"))
+            files.insert(1, EvidenceFile(filename="invoice_arabic_bilingual_visual.pdf", status="not_implemented_milestone_3a"))
         if self.pack.requires_qr:
-            files.insert(2, EvidenceFile(filename="qr.png", status="not_generated_milestone_1"))
-            files.insert(3, EvidenceFile(filename="qr_payload.txt", status="not_generated_milestone_1"))
+            files.insert(2, EvidenceFile(filename="qr.png", status="not_implemented_milestone_3a"))
+            files.insert(3, EvidenceFile(filename="qr_payload.txt", status="not_implemented_milestone_3a"))
 
         return EvidenceBundlePreview(
             generation_id="GEN-PREVIEW",
@@ -62,4 +63,3 @@ class CountryAdapter:
 
     def generate_output(self, canonical_invoice: CanonicalInvoice) -> None:
         raise NotImplementedError("Country output generation is outside Milestone 1.")
-

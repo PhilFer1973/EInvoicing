@@ -210,3 +210,188 @@ def belgium_valid_workbook(
             sheet.delete_cols(headers.index(column_name) + 1)
 
     return workbook
+
+
+def saudi_valid_workbook_bytes(**overrides: Any) -> bytes:
+    workbook = saudi_valid_workbook(**overrides)
+    stream = BytesIO()
+    workbook.save(stream)
+    return stream.getvalue()
+
+
+def saudi_valid_workbook(
+    *,
+    invoice_number: str | None = "INV-SA-2026-001",
+    invoice_date: str | None = "2026-06-24",
+    invoice_time: str | None = "10:30:00",
+    seller_vat: str | None = "300000000000003",
+    buyer_vat: str | None = "300000000000004",
+    buyer_name: str | None = "Demo Saudi Buyer LLC",
+    buyer_address_line_1: str | None = "Buyer Road",
+    buyer_city: str | None = "Riyadh",
+    invoice_type: str = "standard_tax_invoice",
+    selected_output_profile: str = "zatca_standard_tax_invoice_xml_plus_arabic_visual_pdf",
+    tax_total: float = 1500.00,
+    line_description: str | None = "Consulting services",
+    quantity: float | None = 10,
+    unit_code: str | None = "HUR",
+    unit_price: float | None = 1000.00,
+    line_net_amount: float | None = 10000.00,
+    tax_category_code: str | None = "S",
+    tax_rate: float | None = 15,
+    tax_amount: float | None = 1500.00,
+) -> Workbook:
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+
+    entities = workbook.create_sheet("entities")
+    entities.append(
+        [
+            "entity_id",
+            "legal_name",
+            "country_code",
+            "tax_registration_number",
+            "legal_registration_number",
+            "address_line_1",
+            "city",
+            "postal_code",
+            "country_name",
+            "email",
+            "phone",
+        ]
+    )
+    entities.append(
+        [
+            "SELLER-SA-1",
+            "Demo Saudi Services LLC",
+            "SA",
+            seller_vat,
+            "1010000000",
+            "King Road",
+            "Riyadh",
+            "12211",
+            "Saudi Arabia",
+            "billing@example.test",
+            "",
+        ]
+    )
+
+    customers = workbook.create_sheet("customers")
+    customers.append(
+        [
+            "customer_id",
+            "legal_name",
+            "buyer_type",
+            "country_code",
+            "tax_registration_number",
+            "legal_registration_number",
+            "address_line_1",
+            "city",
+            "postal_code",
+            "country_name",
+            "email",
+        ]
+    )
+    customers.append(
+        [
+            "BUYER-SA-1",
+            buyer_name,
+            "business",
+            "SA",
+            buyer_vat,
+            "1010000001",
+            buyer_address_line_1,
+            buyer_city,
+            "12212",
+            "Saudi Arabia",
+            "ap@example.test",
+        ]
+    )
+
+    header = workbook.create_sheet("invoice_header")
+    header.append(
+        [
+            "invoice_id",
+            "invoice_number",
+            "invoice_date",
+            "invoice_time",
+            "due_date",
+            "entity_id",
+            "customer_id",
+            "invoice_type",
+            "invoice_type_code",
+            "supply_type",
+            "transaction_type",
+            "selected_country_pack",
+            "selected_output_profile",
+            "invoice_currency_code",
+            "tax_currency_code",
+            "net_total",
+            "tax_total",
+            "gross_total",
+            "payment_means_code",
+            "payment_id",
+            "notes",
+        ]
+    )
+    header.append(
+        [
+            "INV-SA-1",
+            invoice_number,
+            invoice_date,
+            invoice_time,
+            "2026-07-24",
+            "SELLER-SA-1",
+            "BUYER-SA-1",
+            invoice_type,
+            "388" if "simplified" in invoice_type else "380",
+            "services",
+            "domestic_b2b",
+            "saudi_zatca",
+            selected_output_profile,
+            "SAR",
+            "SAR",
+            10000.00,
+            tax_total,
+            11500.00,
+            "30",
+            "INV-SA-2026-001",
+            "Saudi V1 standard B2B tax invoice.",
+        ]
+    )
+
+    lines = workbook.create_sheet("invoice_lines")
+    lines.append(
+        [
+            "invoice_id",
+            "line_number",
+            "description",
+            "item_name",
+            "quantity",
+            "unit_code",
+            "unit_price",
+            "line_net_amount",
+            "tax_category_code",
+            "tax_rate",
+            "tax_amount",
+            "line_gross_amount",
+        ]
+    )
+    lines.append(
+        [
+            "INV-SA-1",
+            1,
+            line_description,
+            line_description,
+            quantity,
+            unit_code,
+            unit_price,
+            line_net_amount,
+            tax_category_code,
+            tax_rate,
+            tax_amount,
+            11500.00,
+        ]
+    )
+
+    return workbook

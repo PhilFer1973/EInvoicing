@@ -22,7 +22,10 @@ interface ReviewExportPanelProps {
 type DetailView = "validation" | "canonical" | "lines" | "xml" | null;
 
 export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: ReviewExportPanelProps) {
-  const canonical = uploadRecord?.canonical_invoice;
+  const hasRegimeMismatch = Boolean(
+    uploadRecord?.validation_report.results.some((result) => result.rule_id === "WB-REGIME-001" && result.status === "failed")
+  );
+  const canonical = hasRegimeMismatch ? null : uploadRecord?.canonical_invoice;
   const invoice = canonical?.invoice ?? {};
   const seller = canonical?.seller ?? {};
   const buyer = canonical?.buyer ?? {};
@@ -34,11 +37,17 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedXml, setGeneratedXml] = useState("");
   const [generationError, setGenerationError] = useState("");
-  const canExportZip = Boolean(uploadRecord?.evidence_bundle_preview.files.length);
+  const canExportZip = Boolean(uploadRecord?.evidence_bundle_preview.files.length) && !hasRegimeMismatch;
   const canGenerate =
     pack?.country_pack_id === "belgium_peppol" &&
     Boolean(uploadRecord?.canonical_invoice) &&
     (validationReport?.summary.blocking_errors ?? 1) === 0;
+  const generateTitle =
+    pack?.country_pack_id === "saudi_zatca"
+      ? "Saudi XML, QR and PDF generation are not implemented in Milestone 3A."
+      : canGenerate
+        ? "Generate Belgium Peppol-style UBL XML."
+        : "Resolve blocking validation errors before generation.";
 
   useEffect(() => {
     setValidationReport(uploadRecord?.validation_report ?? null);
@@ -92,16 +101,23 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
         <h2 id="review-export-heading">Invoice Review / Export</h2>
       </div>
 
-      <div className="review-grid invoice-summary-grid">
-        <ReviewField className="invoice-number-field" label="Invoice number" value={invoice.invoice_number} />
-        <ReviewField className="invoice-date-field" label="Invoice date" value={invoice.invoice_date} />
-        <ReviewField className="currency-field" label="Currency" value={invoice.invoice_currency_code} />
-        <ReviewField className="review-field-full" label="Seller" value={seller.legal_name} />
-        <ReviewField className="review-field-full" label="Buyer" value={buyer.legal_name} />
-        <ReviewField className="total-field" label="Net" value={totals.net_total} variant="money" />
-        <ReviewField className="total-field" label="Tax" value={totals.tax_total} variant="money" />
-        <ReviewField className="total-field" label="Gross" value={totals.gross_total} variant="money" />
-      </div>
+      {hasRegimeMismatch ? (
+        <div className="no-valid-invoice-state">
+          <strong>No valid invoice loaded</strong>
+          <span>Open validation details to review the workbook mismatch.</span>
+        </div>
+      ) : (
+        <div className="review-grid invoice-summary-grid">
+          <ReviewField className="invoice-number-field" label="Invoice number" value={invoice.invoice_number} />
+          <ReviewField className="invoice-date-field" label="Invoice date" value={invoice.invoice_date} />
+          <ReviewField className="currency-field" label="Currency" value={invoice.invoice_currency_code} />
+          <ReviewField className="review-field-full" label="Seller" value={seller.legal_name} />
+          <ReviewField className="review-field-full" label="Buyer" value={buyer.legal_name} />
+          <ReviewField className="total-field" label="Net" value={totals.net_total} variant="money" />
+          <ReviewField className="total-field" label="Tax" value={totals.tax_total} variant="money" />
+          <ReviewField className="total-field" label="Gross" value={totals.gross_total} variant="money" />
+        </div>
+      )}
 
       <div className="right-panel-spacer" aria-hidden="true" />
 
@@ -114,7 +130,7 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
           className="button-secondary action-button"
           disabled={!canGenerate || isGenerating}
           onClick={() => void handleGenerate()}
-          title={canGenerate ? "Generate Belgium Peppol-style UBL XML." : "Resolve blocking validation errors before generation."}
+          title={generateTitle}
           type="button"
         >
           <Sparkles aria-hidden="true" size={17} />
@@ -181,7 +197,7 @@ function DetailModal({
             <X aria-hidden="true" size={18} />
           </button>
         </div>
-        {detailView === "validation" ? <ValidationDetails report={validationReport} /> : null}
+        {detailView === "validation" ? <ValidationDetails report={validationReport} uploadRecord={uploadRecord} /> : null}
         {detailView === "canonical" ? <CanonicalDetails uploadRecord={uploadRecord} /> : null}
         {detailView === "lines" ? <InvoiceLineDetails lines={lines} /> : null}
         {detailView === "xml" ? <XmlDetails uploadRecord={uploadRecord} xml={xml} /> : null}
@@ -209,7 +225,7 @@ function XmlDetails({ uploadRecord, xml }: { uploadRecord: UploadRecord | null; 
   );
 }
 
-function ValidationDetails({ report }: { report: ValidationReport | null }) {
+function ValidationDetails({ report, uploadRecord }: { report: ValidationReport | null; uploadRecord: UploadRecord | null }) {
   if (!report) {
     return <p className="muted compact">Upload and validate a workbook to view validation details.</p>;
   }
@@ -222,6 +238,12 @@ function ValidationDetails({ report }: { report: ValidationReport | null }) {
         <span><strong>{report.summary.warnings}</strong>Warning</span>
         <span><strong>{report.summary.passed_checks}</strong>Passed</span>
       </div>
+      {uploadRecord?.canonical_invoice ? (
+        <div className="modal-link-row">
+          <a href={canonicalInvoiceUrl(uploadRecord.upload_id)} target="_blank" rel="noreferrer">Open canonical JSON</a>
+          <a href={canonicalInvoiceDownloadUrl(uploadRecord.upload_id)}>Download canonical JSON</a>
+        </div>
+      ) : null}
       <div className="validation-result-list">
         {report.results.map((result, index) => (
           <article className={`validation-result-item ${result.severity}`} key={`${result.rule_id}-${index}`}>

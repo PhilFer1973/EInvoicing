@@ -113,7 +113,10 @@ def generate_output(upload_id: str) -> EvidenceBundlePreview:
     if not record:
         raise HTTPException(status_code=404, detail="Upload not found.")
     if record.selected_country_pack != "belgium_peppol":
-        raise HTTPException(status_code=400, detail="Milestone 2B only supports Belgium / Peppol XML generation.")
+        raise HTTPException(
+            status_code=400,
+            detail="Generation currently supports Belgium / Peppol XML only; Saudi XML, QR and PDF generation are not implemented in Milestone 3A.",
+        )
     if not record.canonical_invoice:
         raise HTTPException(status_code=400, detail="Canonical invoice JSON is required before XML generation.")
     if record.validation_report.summary.blocking_errors > 0:

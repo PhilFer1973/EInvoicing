@@ -1,4 +1,4 @@
-import { UploadCloud } from "lucide-react";
+import { AlertTriangle, UploadCloud } from "lucide-react";
 import { DragEvent, useRef, useState } from "react";
 
 import { uploadWorkbook } from "../services/api";
@@ -11,7 +11,7 @@ interface UploadWorkbookCardProps {
 
 export function UploadWorkbookCard({ selectedPackId, onUploadComplete }: UploadWorkbookCardProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [status, setStatus] = useState<"idle" | "uploading" | "uploaded" | "failed">("idle");
+  const [status, setStatus] = useState<"idle" | "uploading" | "uploaded" | "failed" | "mismatch">("idle");
   const [message, setMessage] = useState("No workbook uploaded");
 
   async function handleFile(file: File | undefined) {
@@ -21,8 +21,16 @@ export function UploadWorkbookCard({ selectedPackId, onUploadComplete }: UploadW
     try {
       const record = await uploadWorkbook(file, selectedPackId);
       onUploadComplete(record);
-      setStatus(record.validation_report.summary.blocking_errors > 0 ? "failed" : "uploaded");
-      setMessage(record.validation_report.summary.blocking_errors > 0 ? "Parsed with blocking errors" : "Workbook parsed");
+      if (hasRegimeMismatch(record)) {
+        setStatus("mismatch");
+        setMessage("Wrong regime selected");
+      } else if (record.validation_report.summary.blocking_errors > 0) {
+        setStatus("failed");
+        setMessage("Workbook rejected");
+      } else {
+        setStatus("uploaded");
+        setMessage("Workbook parsed");
+      }
     } catch (error) {
       setStatus("failed");
       setMessage(error instanceof Error ? error.message : "Upload failed");
@@ -31,7 +39,7 @@ export function UploadWorkbookCard({ selectedPackId, onUploadComplete }: UploadW
 
   function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
-    void handleFile(event.dataTransfer.files.item(0) ?? undefined);
+    void handleFile(firstFile(event.dataTransfer.files));
   }
 
   return (
@@ -42,7 +50,11 @@ export function UploadWorkbookCard({ selectedPackId, onUploadComplete }: UploadW
         onDragOver={(event) => event.preventDefault()}
         onDrop={onDrop}
       >
-        <UploadCloud aria-hidden="true" size={26} />
+        {status === "failed" || status === "mismatch" ? (
+          <AlertTriangle aria-hidden="true" size={26} />
+        ) : (
+          <UploadCloud aria-hidden="true" size={26} />
+        )}
         <strong>Excel workbook</strong>
         <button
           className="button-secondary"
@@ -56,7 +68,7 @@ export function UploadWorkbookCard({ selectedPackId, onUploadComplete }: UploadW
           accept=".xlsx"
           aria-label="Select Excel workbook"
           hidden
-          onChange={(event) => void handleFile(event.target.files?.item(0) ?? undefined)}
+          onChange={(event) => void handleFile(firstFile(event.target.files))}
           ref={inputRef}
           type="file"
         />
@@ -64,4 +76,12 @@ export function UploadWorkbookCard({ selectedPackId, onUploadComplete }: UploadW
       <div className={`status-line ${status}`}>{message}</div>
     </section>
   );
+}
+
+function hasRegimeMismatch(record: UploadRecord): boolean {
+  return record.validation_report.results.some((result) => result.rule_id === "WB-REGIME-001" && result.status === "failed");
+}
+
+function firstFile(files: FileList | null): File | undefined {
+  return files?.item?.(0) ?? files?.[0] ?? undefined;
 }

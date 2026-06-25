@@ -169,10 +169,16 @@ def parse_workbook_upload(content: bytes, filename: str, pack: CountryPack) -> U
                 country_pack_version=pack.pack_version,
             )
         )
-        results.extend(_basic_required_value_results(canonical_invoice, pack))
-        if pack.country_pack_id == "belgium_peppol":
-            results.extend(_belgium_validation_results(canonical_invoice, records, pack))
-        results.extend(boundary_results_for_pack(pack))
+        mismatch_results = _selected_regime_mismatch_results(canonical_invoice, pack)
+        results.extend(mismatch_results)
+        if not mismatch_results:
+            results.extend(_basic_required_value_results(canonical_invoice, pack))
+            if pack.country_pack_id == "belgium_peppol":
+                results.extend(_belgium_validation_results(canonical_invoice, records, pack))
+            if pack.country_pack_id == "saudi_zatca":
+                _apply_saudi_metadata(canonical_invoice)
+                results.extend(_saudi_validation_results(canonical_invoice, pack))
+            results.extend(boundary_results_for_pack(pack))
 
     report = build_validation_report(results)
     evidence = get_adapter(pack.country_pack_id).build_output_placeholder(canonical_invoice)
@@ -311,6 +317,44 @@ def _duplicate_invoice_number_results(records: dict[str, list[dict[str, Any]]], 
             corrective_action="Use one unique invoice number per V1 workbook upload.",
         )
         for number in duplicates
+    ]
+
+
+def _selected_regime_mismatch_results(canonical: CanonicalInvoice, pack: CountryPack) -> list[ValidationResult]:
+    workbook_pack_id = str(canonical.invoice.get("selected_country_pack") or "").strip()
+    workbook_profile = str(canonical.invoice.get("selected_output_profile") or "").strip()
+    pack_mismatch = bool(workbook_pack_id and workbook_pack_id != pack.country_pack_id)
+    profile_pack_id = _pack_id_for_profile(workbook_profile)
+    profile_mismatch = bool(profile_pack_id and profile_pack_id != pack.country_pack_id)
+
+    if not pack_mismatch and not profile_mismatch:
+        return []
+
+    selected_label = _regime_label(pack.country_pack_id)
+    workbook_label = _regime_label(workbook_pack_id)
+    message = "Wrong regime selected" if workbook_label and selected_label else "Workbook does not match regime"
+    corrective_action = (
+        f"This workbook is for {workbook_label}. Switch to {workbook_label} or upload a {selected_label} workbook."
+        if workbook_label and selected_label and pack_mismatch
+        else "Switch regime or upload the correct workbook."
+    )
+
+    return [
+        ValidationResult(
+            rule_id="WB-REGIME-001",
+            layer="workbook_structure",
+            severity="error",
+            status="failed",
+            message=message,
+            field_path="invoice_header.selected_country_pack",
+            country_pack_id=pack.country_pack_id,
+            country_pack_version=pack.pack_version,
+            corrective_action=corrective_action,
+            technical_detail=(
+                f"Selected country pack={pack.country_pack_id}; workbook country pack={workbook_pack_id or 'not provided'}; "
+                f"selected output profile={pack.default_output_profile or 'not configured'}; workbook output profile={workbook_profile or 'not provided'}."
+            ),
+        )
     ]
 
 
@@ -469,6 +513,210 @@ def _belgium_peppol_warning_results(canonical: CanonicalInvoice, pack: CountryPa
     return warnings
 
 
+def _apply_saudi_metadata(canonical: CanonicalInvoice) -> None:
+    canonical.metadata["rounding_policy"] = {
+        "mode": "half_up",
+        "amount_decimals": 2,
+        "vat_summary_validation": "document_level_by_vat_category_and_rate",
+    }
+
+
+def _saudi_validation_results(canonical: CanonicalInvoice, pack: CountryPack) -> list[ValidationResult]:
+    results: list[ValidationResult] = []
+    invoice = canonical.invoice
+    seller = canonical.seller
+    buyer = canonical.buyer
+    invoice_type = str(invoice.get("invoice_type") or "").lower()
+    selected_profile = str(invoice.get("selected_output_profile") or "").lower()
+
+    seller_tin = seller.get("tax_registration_number")
+    if _is_blank(seller_tin):
+        results.append(
+            _blocking_result(
+                "SA-SELLER-001",
+                "legal_invoice_requirements",
+                "seller.tax_registration_number",
+                "Seller VAT/TIN is required for Saudi V1 standard B2B invoices.",
+                pack,
+                "Add tax_registration_number on the entities sheet.",
+            )
+        )
+    elif not _valid_saudi_tin(seller_tin):
+        results.append(
+            _blocking_result(
+                "SA-SELLER-002",
+                "legal_invoice_requirements",
+                "seller.tax_registration_number",
+                "Seller VAT/TIN must be 15 digits and start and end with 3 for the V1 sample rule.",
+                pack,
+                "Use a 15-digit Saudi VAT/TIN such as 300000000000003.",
+            )
+        )
+
+    if _is_blank(buyer.get("tax_registration_number")) and str(buyer.get("buyer_type") or "").lower() in {"business", "government", ""}:
+        results.append(
+            _blocking_result(
+                "SA-BUYER-001",
+                "legal_invoice_requirements",
+                "buyer.tax_registration_number",
+                "Buyer VAT/TIN is required for the Saudi V1 B2B standard invoice scenario.",
+                pack,
+                "Add tax_registration_number on the customers sheet.",
+            )
+        )
+    if _is_blank(buyer.get("legal_name")):
+        results.append(
+            _blocking_result(
+                "SA-BUYER-002",
+                "legal_invoice_requirements",
+                "buyer.legal_name",
+                "Buyer name is required for Saudi V1 standard B2B invoices.",
+                pack,
+                "Add legal_name on the customers sheet.",
+            )
+        )
+    if _is_blank(buyer.get("address_line_1")) or _is_blank(buyer.get("city")):
+        results.append(
+            _blocking_result(
+                "SA-BUYER-003",
+                "legal_invoice_requirements",
+                "buyer.address",
+                "Buyer address line 1 and city are required for Saudi V1 standard B2B invoices.",
+                pack,
+                "Add address_line_1 and city on the customers sheet.",
+            )
+        )
+
+    unsupported_type_tokens = {"simplified", "credit", "debit", "prepayment"}
+    if any(token in invoice_type or token in selected_profile for token in unsupported_type_tokens):
+        results.append(
+            _blocking_result(
+                "SA-INV-TYPE-001",
+                "country_preflight",
+                "invoice.invoice_type",
+                "Saudi V1 supports only the standard B2B tax invoice scenario; simplified invoices, credit notes, debit notes and prepayment invoices are blocked.",
+                pack,
+                "Use the standard tax invoice profile for the V1 Saudi scenario.",
+            )
+        )
+
+    if not canonical.lines:
+        results.append(
+            _blocking_result(
+                "SA-LINE-000",
+                "legal_invoice_requirements",
+                "lines",
+                "At least one invoice line is required for Saudi V1 validation.",
+                pack,
+                "Add invoice line rows to the invoice_lines sheet.",
+            )
+        )
+    for index, line in enumerate(canonical.lines, start=1):
+        line_path = f"lines[{index}]"
+        line_required_checks = [
+            ("SA-LINE-001", "description", "Line description is required."),
+            ("SA-LINE-002", "quantity", "Line quantity is required."),
+            ("SA-LINE-003", "unit_code", "Line unit code is required."),
+            ("SA-LINE-004", "unit_price", "Line unit price is required."),
+            ("SA-LINE-005", "line_net_amount", "Line net amount is required."),
+            ("SA-LINE-006", "tax_category_code", "Line VAT category is required."),
+            ("SA-LINE-007", "tax_rate", "Line VAT rate is required."),
+            ("SA-LINE-008", "tax_amount", "Line VAT amount is required."),
+        ]
+        for rule_id, field, message in line_required_checks:
+            if _is_blank(line.get(field)):
+                results.append(
+                    _blocking_result(
+                        rule_id,
+                        "legal_invoice_requirements",
+                        f"{line_path}.{field}",
+                        message,
+                        pack,
+                        f"Add {field} on the invoice_lines sheet.",
+                    )
+                )
+
+    results.extend(_saudi_vat_reconciliation_results(canonical, pack))
+
+    if not any(result.severity == "error" and result.status == "failed" for result in results):
+        results.append(
+            ValidationResult(
+                rule_id="SA-PREFLIGHT-000",
+                layer="country_preflight",
+                severity="info",
+                status="passed",
+                message="Saudi workbook validation foundation checks passed for the V1 standard B2B scenario.",
+                field_path="invoice.selected_country_pack",
+                country_pack_id=pack.country_pack_id,
+                country_pack_version=pack.pack_version,
+            )
+        )
+
+    return results
+
+
+def _saudi_vat_reconciliation_results(canonical: CanonicalInvoice, pack: CountryPack) -> list[ValidationResult]:
+    line_net_total = sum(_decimal(line.get("line_net_amount")) for line in canonical.lines)
+    line_tax_total = sum(_decimal(line.get("tax_amount")) for line in canonical.lines)
+    header_net = _decimal(canonical.invoice.get("net_total"))
+    header_tax = _decimal(canonical.invoice.get("tax_total"))
+    header_gross = _decimal(canonical.invoice.get("gross_total"))
+    results: list[ValidationResult] = []
+
+    if not _money_equal(line_net_total, header_net):
+        results.append(
+            _blocking_result(
+                "SA-ARITH-001",
+                "arithmetic",
+                "invoice.net_total",
+                "Saudi invoice net total does not match the sum of line net amounts.",
+                pack,
+                "Correct net_total or line_net_amount values in the workbook.",
+            )
+        )
+    if not _money_equal(line_tax_total, header_tax):
+        results.append(
+            _blocking_result(
+                "SA-ARITH-002",
+                "arithmetic",
+                "invoice.tax_total",
+                "Saudi invoice VAT total does not match the sum of line VAT amounts.",
+                pack,
+                "Correct tax_total or line tax_amount values in the workbook.",
+            )
+        )
+    if not _money_equal(header_net + header_tax, header_gross):
+        results.append(
+            _blocking_result(
+                "SA-ARITH-003",
+                "arithmetic",
+                "invoice.gross_total",
+                "Saudi invoice gross total must equal net total plus VAT total.",
+                pack,
+                "Correct gross_total, net_total or tax_total in the invoice_header sheet.",
+            )
+        )
+
+    for summary in canonical.tax_summary:
+        expected_tax = (_decimal(summary.taxable_amount) * _decimal(summary.tax_rate) / Decimal("100")).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+        if not _money_equal(expected_tax, _decimal(summary.tax_amount)):
+            results.append(
+                _blocking_result(
+                    "SA-ARITH-004",
+                    "arithmetic",
+                    "tax_summary.tax_amount",
+                    f"Saudi VAT summary mismatch for category {summary.tax_category_code} at {summary.tax_rate}%.",
+                    pack,
+                    "Correct the line VAT amount or VAT rate so the VAT category total reconciles.",
+                )
+            )
+
+    return results
+
+
 def _blocking_result(
     rule_id: str,
     layer: str,
@@ -591,6 +839,27 @@ def _safe_filename(filename: str) -> str:
 
 def _is_blank(value: Any) -> bool:
     return value is None or str(value).strip() == ""
+
+
+def _valid_saudi_tin(value: Any) -> bool:
+    tin = str(value).strip()
+    return len(tin) == 15 and tin.isdigit() and tin.startswith("3") and tin.endswith("3")
+
+
+def _regime_label(pack_id: str) -> str | None:
+    return {
+        "belgium_peppol": "Belgium",
+        "saudi_zatca": "Saudi",
+        "uk_info": "UK",
+    }.get(pack_id)
+
+
+def _pack_id_for_profile(profile_id: str) -> str | None:
+    if profile_id.startswith("peppol_"):
+        return "belgium_peppol"
+    if profile_id.startswith("zatca_"):
+        return "saudi_zatca"
+    return None
 
 
 def _money_equal(left: Decimal, right: Decimal) -> bool:
