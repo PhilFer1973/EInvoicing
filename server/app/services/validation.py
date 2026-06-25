@@ -62,19 +62,4 @@ def boundary_results_for_pack(pack: CountryPack) -> list[ValidationResult]:
                 corrective_action="Use this output only as an offline workbench artefact.",
             ),
         ]
-    if pack.country_pack_id == "belgium_peppol":
-        return [
-            ValidationResult(
-                rule_id="BE-V1-BOUNDARY-001",
-                layer="country_boundary",
-                severity="warning_ack_required",
-                status="failed",
-                message="This XML has not been transmitted through Peppol and no access point or Mercurius submission has run.",
-                field_path="invoice.selected_country_pack",
-                country_pack_id=pack.country_pack_id,
-                country_pack_version=pack.pack_version,
-                corrective_action="Acknowledge this warning before ZIP export in a later milestone.",
-            )
-        ]
     return []
-

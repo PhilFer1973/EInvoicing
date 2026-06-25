@@ -91,6 +91,7 @@ export interface EvidenceFile {
   filename: string;
   status: string;
   sha256: string | null;
+  storage_path: string | null;
 }
 
 export interface EvidenceBundlePreview {
@@ -110,6 +111,9 @@ export interface UploadRecord {
   selected_output_profile: string | null;
   workbook_sha256_hash: string;
   status: string;
+  stored_workbook_path: string | null;
+  canonical_json_path: string | null;
+  validation_report_path: string | null;
   canonical_invoice: CanonicalInvoice | null;
   validation_report: ValidationReport;
   evidence_bundle_preview: EvidenceBundlePreview;

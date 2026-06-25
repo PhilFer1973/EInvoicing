@@ -31,7 +31,7 @@ export function WorkbenchScreen({
         <CountryInfoPanel pack={selectedPack} />
       </section>
       <section className="right-column column-stack" aria-label="Invoice review and export">
-        <ReviewExportPanel pack={selectedPack} uploadRecord={uploadRecord} />
+        <ReviewExportPanel pack={selectedPack} onUploadRecordChange={onUploadComplete} uploadRecord={uploadRecord} />
       </section>
     </main>
   );

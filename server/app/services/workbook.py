@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 from typing import Any
 from uuid import uuid4
@@ -14,6 +14,7 @@ from app.models.canonical import CanonicalInvoice, TaxSummaryLine
 from app.models.country_pack import CountryPack
 from app.models.upload import UploadRecord
 from app.models.validation import ValidationResult
+from app.storage.file_store import relative_storage_path, save_binary, save_json
 from app.services.validation import boundary_results_for_pack, build_validation_report
 
 
@@ -71,6 +72,8 @@ def parse_workbook_upload(content: bytes, filename: str, pack: CountryPack) -> U
     workbook_hash = hashlib.sha256(content).hexdigest()
     results: list[ValidationResult] = []
     canonical_invoice: CanonicalInvoice | None = None
+    workbook_path, _ = save_binary("uploads", f"{upload_id}_{_safe_filename(filename)}", content)
+    workbook_storage_path = relative_storage_path(workbook_path)
 
     try:
         workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
@@ -89,6 +92,8 @@ def parse_workbook_upload(content: bytes, filename: str, pack: CountryPack) -> U
         )
         report = build_validation_report(results)
         evidence = get_adapter(pack.country_pack_id).build_output_placeholder(None)
+        evidence = _complete_evidence_preview(evidence, workbook_storage_path, workbook_hash, None, None)
+        validation_path, _ = save_json("validation", f"{upload_id}_validation_report.json", report)
         return UploadRecord(
             upload_id=upload_id,
             original_filename=filename,
@@ -96,6 +101,8 @@ def parse_workbook_upload(content: bytes, filename: str, pack: CountryPack) -> U
             selected_output_profile=pack.default_output_profile,
             workbook_sha256_hash=workbook_hash,
             status="parse_failed",
+            stored_workbook_path=workbook_storage_path,
+            validation_report_path=relative_storage_path(validation_path),
             canonical_invoice=None,
             validation_report=report,
             evidence_bundle_preview=evidence,
@@ -146,6 +153,9 @@ def parse_workbook_upload(content: bytes, filename: str, pack: CountryPack) -> U
                 )
 
     if not any(result.severity == "error" and result.status == "failed" for result in results):
+        results.extend(_duplicate_invoice_number_results(records, pack))
+
+    if not any(result.severity == "error" and result.status == "failed" for result in results):
         canonical_invoice = _build_canonical_invoice(records, filename, workbook_hash, pack)
         results.append(
             ValidationResult(
@@ -160,11 +170,25 @@ def parse_workbook_upload(content: bytes, filename: str, pack: CountryPack) -> U
             )
         )
         results.extend(_basic_required_value_results(canonical_invoice, pack))
+        if pack.country_pack_id == "belgium_peppol":
+            results.extend(_belgium_validation_results(canonical_invoice, records, pack))
         results.extend(boundary_results_for_pack(pack))
 
     report = build_validation_report(results)
     evidence = get_adapter(pack.country_pack_id).build_output_placeholder(canonical_invoice)
     evidence.generation_id = f"GEN-PREVIEW-{upload_id.replace('UP-', '')}"
+    canonical_path = None
+    canonical_hash = None
+    if canonical_invoice:
+        canonical_path, canonical_hash = save_json("canonical", f"{upload_id}_canonical_invoice.json", canonical_invoice)
+    validation_path, validation_hash = save_json("validation", f"{upload_id}_validation_report.json", report)
+    evidence = _complete_evidence_preview(
+        evidence,
+        workbook_storage_path,
+        workbook_hash,
+        (relative_storage_path(canonical_path), canonical_hash) if canonical_path and canonical_hash else None,
+        (relative_storage_path(validation_path), validation_hash),
+    )
     status = "validated" if report.summary.blocking_errors == 0 else "validation_failed"
 
     return UploadRecord(
@@ -174,6 +198,9 @@ def parse_workbook_upload(content: bytes, filename: str, pack: CountryPack) -> U
         selected_output_profile=pack.default_output_profile,
         workbook_sha256_hash=workbook_hash,
         status=status,
+        stored_workbook_path=workbook_storage_path,
+        canonical_json_path=relative_storage_path(canonical_path) if canonical_path else None,
+        validation_report_path=relative_storage_path(validation_path),
         canonical_invoice=canonical_invoice,
         validation_report=report,
         evidence_bundle_preview=evidence,
@@ -264,6 +291,219 @@ def _derive_tax_summary(lines: list[dict[str, Any]]) -> list[TaxSummaryLine]:
     ]
 
 
+def _duplicate_invoice_number_results(records: dict[str, list[dict[str, Any]]], pack: CountryPack) -> list[ValidationResult]:
+    invoice_numbers = [
+        str(row.get("invoice_number") or "").strip()
+        for row in records.get("invoice_header", [])
+        if str(row.get("invoice_number") or "").strip()
+    ]
+    duplicates = sorted({number for number in invoice_numbers if invoice_numbers.count(number) > 1})
+    return [
+        ValidationResult(
+            rule_id="GEN-INV-002",
+            layer="referential_integrity",
+            severity="error",
+            status="failed",
+            message=f"Duplicate invoice number within upload: {number}.",
+            field_path="invoice_header.invoice_number",
+            country_pack_id=pack.country_pack_id,
+            country_pack_version=pack.pack_version,
+            corrective_action="Use one unique invoice number per V1 workbook upload.",
+        )
+        for number in duplicates
+    ]
+
+
+def _belgium_validation_results(
+    canonical: CanonicalInvoice,
+    records: dict[str, list[dict[str, Any]]],
+    pack: CountryPack,
+) -> list[ValidationResult]:
+    results: list[ValidationResult] = []
+    seller_vat_missing = _is_blank(canonical.seller.get("tax_registration_number"))
+    buyer_vat_missing = _is_blank(canonical.buyer.get("tax_registration_number"))
+    buyer_reference_missing = _is_blank(canonical.invoice.get("buyer_reference"))
+    po_reference_missing = _is_blank(canonical.invoice.get("purchase_order_reference"))
+
+    if seller_vat_missing:
+        results.append(
+            _blocking_result(
+                "BE-LEGAL-001",
+                "legal_invoice_requirements",
+                "seller.tax_registration_number",
+                "Seller VAT number is required for the Belgian V1 B2B scenario.",
+                pack,
+                "Add tax_registration_number on the entities sheet.",
+            )
+        )
+    if buyer_vat_missing and str(canonical.buyer.get("buyer_type") or "").lower() in {"business", "government", ""}:
+        results.append(
+            _blocking_result(
+                "BE-LEGAL-002",
+                "legal_invoice_requirements",
+                "buyer.tax_registration_number",
+                "Buyer VAT number is required for Belgian B2B invoices.",
+                pack,
+                "Add tax_registration_number on the customers sheet.",
+            )
+        )
+    if buyer_reference_missing and po_reference_missing:
+        results.append(
+            _blocking_result(
+                "BE-EINV-011",
+                "country_preflight",
+                "invoice.buyer_reference",
+                "Either buyer reference or purchase order reference must be provided.",
+                pack,
+                "Add buyer_reference or purchase_order_reference on the invoice_header sheet.",
+            )
+        )
+
+    results.extend(_belgium_vat_reconciliation_results(canonical, records, pack))
+    results.extend(_belgium_peppol_warning_results(canonical, pack))
+
+    if not any(result.severity == "error" and result.status == "failed" for result in results):
+        results.append(
+            ValidationResult(
+                rule_id="BE-PREFLIGHT-000",
+                layer="country_preflight",
+                severity="info",
+                status="passed",
+                message="Belgium workbook preflight checks passed.",
+                field_path="invoice.selected_country_pack",
+                country_pack_id=pack.country_pack_id,
+                country_pack_version=pack.pack_version,
+            )
+        )
+
+    return results
+
+
+def _belgium_vat_reconciliation_results(
+    canonical: CanonicalInvoice,
+    records: dict[str, list[dict[str, Any]]],
+    pack: CountryPack,
+) -> list[ValidationResult]:
+    line_net_total = sum(_decimal(line.get("line_net_amount")) for line in canonical.lines)
+    line_tax_total = sum(_decimal(line.get("tax_amount")) for line in canonical.lines)
+    header_net = _decimal(canonical.invoice.get("net_total"))
+    header_tax = _decimal(canonical.invoice.get("tax_total"))
+    header_gross = _decimal(canonical.invoice.get("gross_total"))
+    results: list[ValidationResult] = []
+
+    if not _money_equal(line_net_total, header_net):
+        results.append(
+            _blocking_result(
+                "BE-ARITH-001",
+                "arithmetic",
+                "invoice.net_total",
+                "Invoice net total does not match the sum of line net amounts.",
+                pack,
+                "Correct net_total or the line_net_amount values in the workbook.",
+            )
+        )
+    if not _money_equal(line_tax_total, header_tax):
+        results.append(
+            _blocking_result(
+                "BE-ARITH-002",
+                "arithmetic",
+                "invoice.tax_total",
+                "Invoice VAT total does not match the sum of line VAT amounts.",
+                pack,
+                "Correct tax_total or the line tax_amount values in the workbook.",
+            )
+        )
+    if not _money_equal(header_net + header_tax, header_gross):
+        results.append(
+            _blocking_result(
+                "BE-ARITH-003",
+                "arithmetic",
+                "invoice.gross_total",
+                "Invoice gross total must equal net total plus VAT total.",
+                pack,
+                "Correct gross_total, net_total or tax_total in the invoice_header sheet.",
+            )
+        )
+
+    for summary in canonical.tax_summary:
+        expected_tax = (_decimal(summary.taxable_amount) * _decimal(summary.tax_rate) / Decimal("100")).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+        actual_tax = _decimal(summary.tax_amount)
+        if not _money_equal(expected_tax, actual_tax):
+            results.append(
+                _blocking_result(
+                    "BE-ARITH-004",
+                    "arithmetic",
+                    "tax_summary.tax_amount",
+                    f"VAT summary mismatch for category {summary.tax_category_code} at {summary.tax_rate}%.",
+                    pack,
+                    "Correct the line VAT amount or VAT rate so the VAT category total reconciles.",
+                )
+            )
+
+    return results
+
+
+def _belgium_peppol_warning_results(canonical: CanonicalInvoice, pack: CountryPack) -> list[ValidationResult]:
+    warnings: list[ValidationResult] = []
+    if _is_blank(canonical.seller.get("peppol_id")):
+        warnings.append(
+            _ack_warning_result(
+                "BE-PEPPOL-001",
+                "seller.peppol_id",
+                "Seller Peppol endpoint ID is missing. This would prevent live Peppol delivery.",
+                pack,
+            )
+        )
+    if _is_blank(canonical.buyer.get("peppol_id")):
+        warnings.append(
+            _ack_warning_result(
+                "BE-PEPPOL-002",
+                "buyer.peppol_id",
+                "Buyer Peppol endpoint ID is missing. This would prevent live Peppol delivery.",
+                pack,
+            )
+        )
+    return warnings
+
+
+def _blocking_result(
+    rule_id: str,
+    layer: str,
+    field_path: str,
+    message: str,
+    pack: CountryPack,
+    corrective_action: str,
+) -> ValidationResult:
+    return ValidationResult(
+        rule_id=rule_id,
+        layer=layer,
+        severity="error",
+        status="failed",
+        message=message,
+        field_path=field_path,
+        country_pack_id=pack.country_pack_id,
+        country_pack_version=pack.pack_version,
+        corrective_action=corrective_action,
+    )
+
+
+def _ack_warning_result(rule_id: str, field_path: str, message: str, pack: CountryPack) -> ValidationResult:
+    return ValidationResult(
+        rule_id=rule_id,
+        layer="country_preflight",
+        severity="warning_ack_required",
+        status="failed",
+        message=message,
+        field_path=field_path,
+        country_pack_id=pack.country_pack_id,
+        country_pack_version=pack.pack_version,
+        corrective_action="Add Peppol endpoint details or acknowledge before export in a later milestone.",
+    )
+
+
 def _basic_required_value_results(canonical: CanonicalInvoice, pack: CountryPack) -> list[ValidationResult]:
     checks = [
         ("GEN-INV-001", "invoice.invoice_number", canonical.invoice.get("invoice_number"), "Invoice number is required."),
@@ -321,6 +561,45 @@ def _normalise_cell(value: Any) -> Any:
     return value
 
 
+def _complete_evidence_preview(
+    evidence: Any,
+    workbook_storage_path: str,
+    workbook_hash: str,
+    canonical: tuple[str, str] | None,
+    validation: tuple[str, str] | None,
+) -> Any:
+    for file in evidence.files:
+        if file.filename == "source_upload_snapshot.xlsx":
+            file.status = "stored"
+            file.sha256 = workbook_hash
+            file.storage_path = workbook_storage_path
+        elif file.filename == "canonical_invoice.json" and canonical:
+            file.status = "stored"
+            file.sha256 = canonical[1]
+            file.storage_path = canonical[0]
+        elif file.filename == "validation_report.json" and validation:
+            file.status = "stored"
+            file.sha256 = validation[1]
+            file.storage_path = validation[0]
+    return evidence
+
+
+def _safe_filename(filename: str) -> str:
+    cleaned = "".join(char if char.isalnum() or char in {".", "-", "_"} else "_" for char in filename)
+    return cleaned or "upload.xlsx"
+
+
+def _is_blank(value: Any) -> bool:
+    return value is None or str(value).strip() == ""
+
+
+def _money_equal(left: Decimal, right: Decimal) -> bool:
+    return left.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) == right.quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+
+
 def _decimal(value: Any) -> Decimal:
     if value in (None, ""):
         return Decimal("0")
@@ -328,4 +607,3 @@ def _decimal(value: Any) -> Decimal:
         return Decimal(str(value))
     except (InvalidOperation, ValueError):
         return Decimal("0")
-

@@ -1,9 +1,21 @@
-import type { AuditEntry, CountryPack, CountryPackList, UploadRecord } from "../types";
+import type { AuditEntry, CountryPack, CountryPackList, UploadRecord, ValidationReport } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 export function workbookTemplateUrl(): string {
   return `${API_BASE_URL}/api/templates/workbook`;
+}
+
+export function canonicalInvoiceUrl(uploadId: string): string {
+  return `${API_BASE_URL}/api/uploads/${uploadId}/canonical-invoice`;
+}
+
+export function canonicalInvoiceDownloadUrl(uploadId: string): string {
+  return `${API_BASE_URL}/api/uploads/${uploadId}/canonical-invoice/download`;
+}
+
+export function evidenceBundleDownloadUrl(uploadId: string): string {
+  return `${API_BASE_URL}/api/uploads/${uploadId}/evidence-bundle/download`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -27,6 +39,12 @@ export async function uploadWorkbook(file: File, selectedCountryPack: string): P
   return request<UploadRecord>("/api/uploads", {
     method: "POST",
     body
+  });
+}
+
+export async function validateUpload(uploadId: string): Promise<ValidationReport> {
+  return request<ValidationReport>(`/api/uploads/${uploadId}/validate`, {
+    method: "POST"
   });
 }
 
