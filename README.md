@@ -44,8 +44,11 @@ cd C:\Users\Philip\Downloads\EInvoicing\server
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e .[dev]
+python -m playwright install chromium
 python -m uvicorn app.main:app --reload --port 8000
 ```
+
+`python -m playwright install chromium` is required once on each development machine for the Saudi Arabic/bilingual visual PDF renderer. It runs locally and does not connect to ZATCA/FATOORA.
 
 Health check:
 
@@ -94,6 +97,17 @@ cd C:\Users\Philip\Downloads\EInvoicing\apps\web
 npm test
 npm run build
 ```
+
+## Saudi QR And Visual PDF Check
+
+1. Start the backend and frontend using the commands above.
+2. Open `http://127.0.0.1:5173`.
+3. Select `Saudi Arabia / ZATCA`.
+4. Upload `test_data/workbooks/SA-VALID-001.xlsx`.
+5. Select `Generate` after validation completes, then use the generated-output dialog to open or download the XML, Phase-1-style QR image and Arabic/bilingual visual PDF. The same dialog shows the decoded QR fields and offers `Decoded JSON`.
+6. Select `Export ZIP` to download the evidence bundle containing all generated artifacts.
+
+The Saudi QR contains Base64-encoded TLV invoice-data tags 1-5 only, so a normal phone scanner may display encoded text rather than a sentence. The visual PDF is not PDF/A-3 and neither artifact is submitted, cleared or production-signed.
 
 ## Milestone 1 Acceptance Checks
 

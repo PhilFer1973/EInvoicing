@@ -2,10 +2,10 @@
   "country_pack_id": "saudi_zatca",
   "display_name": "Saudi Arabia / ZATCA",
   "country_code": "SA",
-  "pack_version": "0.4.0",
-  "support_level": "validation_foundation",
-  "v1_boundary": "Milestone 3A validates the Saudi workbook and canonical invoice foundation only. No Saudi XML, QR, PDF/A-3, FATOORA submission, clearance, reporting, production cryptographic stamp or live-valid Saudi tax invoice claim.",
-  "v1_boundary_warning": "Saudi V1 has not submitted to ZATCA/FATOORA, has not cleared standard B2B invoices, has not reported simplified invoices, has not applied a ZATCA clearance stamp and has not created production cryptographic signatures. Generated outputs are not live-valid Saudi B2B tax invoices.",
+  "pack_version": "0.6.0",
+  "support_level": "offline_xml_qr_visual_pdf_generation",
+  "v1_boundary": "Milestone 3C validates the Saudi workbook/canonical invoice foundation and generates offline/demo Saudi XML, Phase-1-style QR tags 1-5 and a visual Arabic/bilingual PDF. No PDF/A-3 embedded XML, FATOORA submission, clearance, reporting, production cryptographic stamp/signature, CSID onboarding or live-valid Saudi tax invoice claim.",
+  "v1_boundary_warning": "Saudi V1 offline XML has not been submitted to ZATCA/FATOORA, has not cleared standard B2B invoices, has not reported simplified invoices, has not applied a ZATCA clearance stamp and has not created production cryptographic signatures. Generated outputs are not live-valid Saudi B2B tax invoices.",
   "output_profiles": [
     "zatca_standard_tax_invoice_xml_plus_arabic_visual_pdf"
   ],
@@ -37,15 +37,17 @@
   "qr_signature_requirements": [
     "QR code content is required under the Saudi e-invoicing regime.",
     "Production security features include cryptographic stamp/signature requirements.",
-    "The production previous-invoice-hash chain and certificate/CSID flows are outside this Milestone 1 app."
+    "Milestone 3C generates invoice-data QR tags 1-5 only; Phase Two cryptographic QR tags 6-9 are not generated.",
+    "The production previous-invoice-hash chain and certificate/CSID flows are outside this Milestone 3C app."
   ],
   "retention_or_audit_notes": [
     "The evidence bundle must retain the source upload, canonical invoice JSON, validation report, country pack manifest, hashes and clear V1 boundary warnings.",
     "Official ZATCA SDK/toolbox or authority validation must remain not configured until a real validator or authority workflow is integrated."
   ],
   "v1_app_capability": [
-    "Milestone 3A loads this pack, validates the Saudi workbook and canonical invoice JSON foundation and builds the local evidence bundle skeleton.",
-    "Saudi XML, Arabic/bilingual visual PDF, QR, clearance, reporting and production signing are intentionally not implemented in Milestone 3A.",
+    "Milestone 3C loads this pack, validates the Saudi workbook and canonical invoice JSON foundation, and generates offline/demo Saudi XML, a Phase-1-style QR with tags 1-5 and a visual Arabic/bilingual PDF.",
+    "The PDF is visual only and the QR does not include Phase Two cryptographic tags 6-9.",
+    "PDF/A-3 embedded XML, clearance, reporting, CSID onboarding, production signing and live authority workflows are intentionally not implemented in Milestone 3C.",
     "This app does not submit, clear, report, obtain authority stamps or create production signatures."
   ],
   "official_sources": [
@@ -63,6 +65,8 @@
     }
   ],
   "boundary_highlights": [
+    "Offline/demo XML, QR tags 1-5 and visual PDF only.",
+    "No QR cryptographic values or production signature.",
     "No FATOORA submission.",
     "No standard B2B clearance.",
     "No simplified invoice reporting.",

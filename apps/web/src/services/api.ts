@@ -1,4 +1,4 @@
-import type { AuditEntry, CountryPack, CountryPackList, UploadRecord, ValidationReport } from "../types";
+import type { AuditEntry, CountryPack, CountryPackList, DecodedQrPayload, UploadRecord, ValidationReport } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -24,6 +24,26 @@ export function generatedXmlUrl(uploadId: string): string {
 
 export function generatedXmlDownloadUrl(uploadId: string): string {
   return `${API_BASE_URL}/api/uploads/${uploadId}/generated-xml/download`;
+}
+
+export function generatedQrUrl(uploadId: string): string {
+  return `${API_BASE_URL}/api/uploads/${uploadId}/generated-qr`;
+}
+
+export function generatedQrDownloadUrl(uploadId: string): string {
+  return `${API_BASE_URL}/api/uploads/${uploadId}/generated-qr/download`;
+}
+
+export function generatedPdfUrl(uploadId: string): string {
+  return `${API_BASE_URL}/api/uploads/${uploadId}/generated-pdf`;
+}
+
+export function generatedPdfDownloadUrl(uploadId: string): string {
+  return `${API_BASE_URL}/api/uploads/${uploadId}/generated-pdf/download`;
+}
+
+export function generatedQrPayloadDecodedDownloadUrl(uploadId: string): string {
+  return `${API_BASE_URL}/api/uploads/${uploadId}/generated-qr-payload-decoded/download`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -62,13 +82,8 @@ export async function generateOutput(uploadId: string): Promise<UploadRecord["ev
   });
 }
 
-export async function fetchGeneratedXml(uploadId: string): Promise<string> {
-  const response = await fetch(generatedXmlUrl(uploadId));
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Request failed with status ${response.status}`);
-  }
-  return response.text();
+export async function fetchGeneratedQrPayloadDecoded(uploadId: string): Promise<DecodedQrPayload> {
+  return request<DecodedQrPayload>(`/api/uploads/${uploadId}/generated-qr-payload-decoded`);
 }
 
 export async function fetchAuditEntries(): Promise<AuditEntry[]> {

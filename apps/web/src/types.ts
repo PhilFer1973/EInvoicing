@@ -104,6 +104,18 @@ export interface EvidenceBundlePreview {
   v1_boundary: string;
 }
 
+export interface DecodedQrPayload {
+  encoding: string;
+  phase: string;
+  phase_two_tags_included: boolean;
+  tags: Array<{
+    tag: number;
+    label: string;
+    field: string;
+    value: string;
+  }>;
+}
+
 export interface UploadRecord {
   upload_id: string;
   original_filename: string;

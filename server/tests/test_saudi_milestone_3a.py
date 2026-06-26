@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
 from httpx import ASGITransport, AsyncClient
@@ -117,6 +118,7 @@ async def test_saudi_canonical_invoice_contains_expected_sections(client: AsyncC
     assert canonical["invoice"]["invoice_number"] == "INV-SA-2026-001"
     assert canonical["invoice"]["invoice_time"] == "10:30:00"
     assert canonical["lines"][0]["description"] == "Consulting services"
+    assert canonical["lines"][0]["description_ar"] == "خدمات استشارية"
     assert canonical["tax_summary"] == [
         {
             "tax_category_code": "S",
@@ -147,9 +149,11 @@ async def test_saudi_evidence_bundle_skeleton_contains_core_artefacts(client: As
     assert files["canonical_invoice.json"]["status"] == "stored"
     assert files["validation_report.json"]["status"] == "stored"
     assert files["country_pack_manifest.json"]["status"] == "preview_available"
-    assert files["invoice.xml"]["status"] == "not_implemented_milestone_3a"
-    assert files["invoice_arabic_bilingual_visual.pdf"]["status"] == "not_implemented_milestone_3a"
-    assert files["qr.png"]["status"] == "not_implemented_milestone_3a"
+    assert files["invoice.xml"]["status"] == "pending_generation"
+    assert files["invoice_arabic_bilingual_visual.pdf"]["status"] == "pending_generation"
+    assert files["qr.png"]["status"] == "pending_generation"
+    assert files["qr_payload_base64.txt"]["status"] == "pending_generation"
+    assert files["qr_payload_decoded.json"]["status"] == "pending_generation"
 
     response = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
     assert response.status_code == 200
@@ -164,13 +168,77 @@ async def test_saudi_evidence_bundle_skeleton_contains_core_artefacts(client: As
         assert "invoice_arabic_bilingual_visual.pdf" not in names
 
 
-async def test_saudi_generation_endpoint_does_not_generate_xml_qr_or_pdf_in_milestone_3a(client: AsyncClient) -> None:
+async def test_valid_saudi_sample_generates_offline_xml(client: AsyncClient) -> None:
     payload = await _upload_saudi_workbook(client, saudi_valid_workbook_bytes())
 
     response = await client.post(f"/api/uploads/{payload['upload_id']}/generate")
 
-    assert response.status_code == 400
-    assert "Saudi XML, QR and PDF generation are not implemented in Milestone 3A" in response.text
+    assert response.status_code == 200
+    evidence_files = {file["filename"]: file for file in response.json()["files"]}
+    assert response.json()["status"] == "outputs_generated_milestone_3c"
+    assert evidence_files["invoice.xml"]["status"] == "stored"
+    assert evidence_files["invoice.xml"]["sha256"]
+    assert evidence_files["invoice.xml"]["storage_path"].endswith("_saudi_zatca_offline_invoice.xml")
+    assert evidence_files["invoice_arabic_bilingual_visual.pdf"]["status"] == "stored"
+    assert evidence_files["qr.png"]["status"] == "stored"
+    assert evidence_files["qr_payload_base64.txt"]["status"] == "stored"
+    assert evidence_files["qr_payload_decoded.json"]["status"] == "stored"
+
+
+async def test_generated_saudi_xml_contains_expected_values(client: AsyncClient) -> None:
+    payload = await _upload_saudi_workbook(client, saudi_valid_workbook_bytes())
+    await client.post(f"/api/uploads/{payload['upload_id']}/generate")
+
+    xml_response = await client.get(f"/api/uploads/{payload['upload_id']}/generated-xml")
+    xml = xml_response.text
+
+    assert xml_response.status_code == 200
+    ET.fromstring(xml)
+    assert "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" in xml
+    assert "<cbc:ProfileID>reporting:1.0</cbc:ProfileID>" in xml
+    assert "<cbc:ID>INV-SA-2026-001</cbc:ID>" in xml
+    assert "<cbc:UUID>" in xml
+    assert "<cbc:IssueDate>2026-06-24</cbc:IssueDate>" in xml
+    assert "<cbc:IssueTime>10:30:00</cbc:IssueTime>" in xml
+    assert "<cbc:CompanyID>300000000000003</cbc:CompanyID>" in xml
+    assert "<cbc:CompanyID>300000000000004</cbc:CompanyID>" in xml
+    assert "<cbc:DocumentCurrencyCode>SAR</cbc:DocumentCurrencyCode>" in xml
+    assert "<cbc:TaxCurrencyCode>SAR</cbc:TaxCurrencyCode>" in xml
+    assert '<cbc:TaxAmount currencyID="SAR">1500.00</cbc:TaxAmount>' in xml
+    assert '<cbc:PayableAmount currencyID="SAR">11500.00</cbc:PayableAmount>' in xml
+    assert "No FATOORA submission" in xml
+    assert "ZATCA clearance stamp" in xml
+
+
+async def test_evidence_zip_includes_generated_saudi_xml_after_generation(client: AsyncClient) -> None:
+    payload = await _upload_saudi_workbook(client, saudi_valid_workbook_bytes())
+    await client.post(f"/api/uploads/{payload['upload_id']}/generate")
+
+    response = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
+
+    assert response.status_code == 200
+    with ZipFile(BytesIO(response.content)) as archive:
+        names = set(archive.namelist())
+        assert "invoice.xml" in names
+        assert "source_upload_snapshot.xlsx" in names
+        assert "canonical_invoice.json" in names
+        assert "validation_report.json" in names
+        assert "country_pack_manifest.json" in names
+        assert "qr.png" in names
+        assert "qr_payload_base64.txt" in names
+        assert "qr_payload_decoded.json" in names
+        assert "invoice_arabic_bilingual_visual.pdf" in names
+        xml = archive.read("invoice.xml").decode("utf-8")
+        assert "INV-SA-2026-001" in xml
+
+
+async def test_saudi_generation_is_blocked_when_validation_has_blocking_errors(client: AsyncClient) -> None:
+    payload = await _upload_saudi_workbook(client, saudi_valid_workbook_bytes(invoice_time=""))
+
+    response = await client.post(f"/api/uploads/{payload['upload_id']}/generate")
+
+    assert response.status_code == 409
+    assert "Blocking validation errors" in response.text
 
 
 async def _upload_saudi_workbook(client: AsyncClient, workbook_bytes: bytes) -> dict:

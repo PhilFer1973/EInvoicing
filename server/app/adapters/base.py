@@ -43,13 +43,13 @@ class CountryAdapter:
             EvidenceFile(filename="hashes.txt", status="pending_generation"),
         ]
         if self.pack.support_level != "info_only":
-            xml_status = "not_implemented_milestone_3a" if self.pack.country_pack_id == "saudi_zatca" else "pending_generation"
-            files.insert(0, EvidenceFile(filename="invoice.xml", status=xml_status))
+            files.insert(0, EvidenceFile(filename="invoice.xml", status="pending_generation"))
         if self.pack.requires_pdf:
-            files.insert(1, EvidenceFile(filename="invoice_arabic_bilingual_visual.pdf", status="not_implemented_milestone_3a"))
+            files.insert(1, EvidenceFile(filename="invoice_arabic_bilingual_visual.pdf", status="pending_generation"))
         if self.pack.requires_qr:
-            files.insert(2, EvidenceFile(filename="qr.png", status="not_implemented_milestone_3a"))
-            files.insert(3, EvidenceFile(filename="qr_payload.txt", status="not_implemented_milestone_3a"))
+            files.insert(2, EvidenceFile(filename="qr.png", status="pending_generation"))
+            files.insert(3, EvidenceFile(filename="qr_payload_base64.txt", status="pending_generation"))
+            files.insert(4, EvidenceFile(filename="qr_payload_decoded.json", status="pending_generation"))
 
         return EvidenceBundlePreview(
             generation_id="GEN-PREVIEW",

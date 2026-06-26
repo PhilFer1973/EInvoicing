@@ -21,7 +21,7 @@ describe("UploadWorkbookCard", () => {
       )
     );
     const onUploadComplete = vi.fn();
-    const { container } = render(<UploadWorkbookCard selectedPackId="saudi_zatca" onUploadComplete={onUploadComplete} />);
+    const { container, rerender } = render(<UploadWorkbookCard selectedPackId="saudi_zatca" onUploadComplete={onUploadComplete} />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
 
     fireEvent.change(fileInput, {
@@ -34,6 +34,13 @@ describe("UploadWorkbookCard", () => {
       expect(screen.getByText("Wrong regime selected")).toBeInTheDocument();
     });
     expect(onUploadComplete).toHaveBeenCalledWith(expect.objectContaining({ status: "validation_failed" }));
+
+    rerender(<UploadWorkbookCard selectedPackId="belgium_peppol" onUploadComplete={onUploadComplete} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No workbook uploaded")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Wrong regime selected")).not.toBeInTheDocument();
   });
 });
 

@@ -1,5 +1,5 @@
 import { AlertTriangle, UploadCloud } from "lucide-react";
-import { DragEvent, useRef, useState } from "react";
+import { DragEvent, useEffect, useRef, useState } from "react";
 
 import { uploadWorkbook } from "../services/api";
 import type { UploadRecord } from "../types";
@@ -13,6 +13,14 @@ export function UploadWorkbookCard({ selectedPackId, onUploadComplete }: UploadW
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<"idle" | "uploading" | "uploaded" | "failed" | "mismatch">("idle");
   const [message, setMessage] = useState("No workbook uploaded");
+
+  useEffect(() => {
+    setStatus("idle");
+    setMessage("No workbook uploaded");
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  }, [selectedPackId]);
 
   async function handleFile(file: File | undefined) {
     if (!file || !selectedPackId) return;
@@ -34,6 +42,10 @@ export function UploadWorkbookCard({ selectedPackId, onUploadComplete }: UploadW
     } catch (error) {
       setStatus("failed");
       setMessage(error instanceof Error ? error.message : "Upload failed");
+    } finally {
+      if (inputRef.current) {
+        inputRef.current.value = "";
+      }
     }
   }
 

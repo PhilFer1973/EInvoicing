@@ -1,17 +1,22 @@
-import { Archive, ListChecks, Sparkles, X } from "lucide-react";
+import { Archive, Code2, Download, ExternalLink, FileText, ListChecks, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
   canonicalInvoiceDownloadUrl,
   canonicalInvoiceUrl,
   evidenceBundleDownloadUrl,
-  fetchGeneratedXml,
+  fetchGeneratedQrPayloadDecoded,
   generateOutput,
+  generatedPdfDownloadUrl,
+  generatedPdfUrl,
+  generatedQrPayloadDecodedDownloadUrl,
+  generatedQrDownloadUrl,
+  generatedQrUrl,
   generatedXmlDownloadUrl,
   generatedXmlUrl,
   validateUpload
 } from "../services/api";
-import type { CountryPack, UploadRecord, ValidationReport } from "../types";
+import type { CountryPack, DecodedQrPayload, UploadRecord, ValidationReport } from "../types";
 
 interface ReviewExportPanelProps {
   pack: CountryPack | null;
@@ -19,7 +24,7 @@ interface ReviewExportPanelProps {
   onUploadRecordChange?: (record: UploadRecord) => void;
 }
 
-type DetailView = "validation" | "canonical" | "lines" | "xml" | null;
+type DetailView = "validation" | "canonical" | "lines" | "outputs" | null;
 
 export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: ReviewExportPanelProps) {
   const hasRegimeMismatch = Boolean(
@@ -35,26 +40,37 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(uploadRecord?.validation_report ?? null);
   const [isValidating, setIsValidating] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedXml, setGeneratedXml] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
   const [generationError, setGenerationError] = useState("");
+  const isSaudiPack = pack?.country_pack_id === "saudi_zatca";
+  const generationSupported = pack?.country_pack_id === "belgium_peppol" || isSaudiPack;
   const canExportZip = Boolean(uploadRecord?.evidence_bundle_preview.files.length) && !hasRegimeMismatch;
   const canGenerate =
-    pack?.country_pack_id === "belgium_peppol" &&
+    generationSupported &&
     Boolean(uploadRecord?.canonical_invoice) &&
+    !hasRegimeMismatch &&
     (validationReport?.summary.blocking_errors ?? 1) === 0;
   const generateTitle =
-    pack?.country_pack_id === "saudi_zatca"
-      ? "Saudi XML, QR and PDF generation are not implemented in Milestone 3A."
-      : canGenerate
-        ? "Generate Belgium Peppol-style UBL XML."
-        : "Resolve blocking validation errors before generation.";
+    canGenerate
+      ? isSaudiPack
+        ? "Generate offline/demo Saudi XML, QR tags 1-5 and visual PDF. No FATOORA submission, clearance, Phase Two cryptography or production signature."
+        : "Generate Belgium Peppol-style UBL XML."
+      : generationSupported
+        ? "Resolve blocking validation errors before generation."
+        : "Generation is not configured for this country pack.";
 
   useEffect(() => {
     setValidationReport(uploadRecord?.validation_report ?? null);
     setDetailView(null);
-    setGeneratedXml("");
     setGenerationError("");
+    setIsExporting(false);
   }, [uploadRecord?.upload_id]);
+
+  useEffect(() => {
+    if (!isExporting) return;
+    const timer = window.setTimeout(() => setIsExporting(false), 900);
+    return () => window.clearTimeout(timer);
+  }, [isExporting]);
 
   async function handleValidate() {
     if (!uploadRecord) return;
@@ -85,13 +101,16 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
         generated_xml_path: xmlFile?.storage_path ?? uploadRecord.generated_xml_path,
         generated_xml_sha256_hash: xmlFile?.sha256 ?? uploadRecord.generated_xml_sha256_hash
       });
-      setGeneratedXml(await fetchGeneratedXml(uploadRecord.upload_id));
-      setDetailView("xml");
+      setDetailView("outputs");
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "XML generation failed");
     } finally {
       setIsGenerating(false);
     }
+  }
+
+  function handleExport() {
+    setIsExporting(true);
   }
 
   return (
@@ -122,12 +141,19 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
       <div className="right-panel-spacer" aria-hidden="true" />
 
       <div className="action-panel">
-        <button className="button-secondary action-button" disabled={!uploadRecord || isValidating} onClick={() => void handleValidate()} type="button">
+        <button
+          aria-busy={isValidating}
+          className={`button-primary action-button action-command-button ${isValidating ? "is-processing" : ""}`}
+          disabled={!uploadRecord || isValidating}
+          onClick={() => void handleValidate()}
+          type="button"
+        >
           <ListChecks aria-hidden="true" size={17} />
           {isValidating ? "Validating" : "Validate"}
         </button>
         <button
-          className="button-secondary action-button"
+          aria-busy={isGenerating}
+          className={`button-primary action-button action-command-button ${isGenerating ? "is-processing" : ""}`}
           disabled={!canGenerate || isGenerating}
           onClick={() => void handleGenerate()}
           title={generateTitle}
@@ -138,12 +164,17 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
         </button>
         {generationError ? <p className="action-error">{generationError}</p> : null}
         {uploadRecord && canExportZip ? (
-          <a className="button-primary action-button export-zip-button" href={evidenceBundleDownloadUrl(uploadRecord.upload_id)}>
+          <a
+            aria-busy={isExporting}
+            className={`button-primary action-button action-command-button export-zip-button ${isExporting ? "is-processing" : ""}`}
+            href={evidenceBundleDownloadUrl(uploadRecord.upload_id)}
+            onClick={handleExport}
+          >
             <Archive aria-hidden="true" size={17} />
-            Export ZIP
+            {isExporting ? "Exporting" : "Export ZIP"}
           </a>
         ) : (
-          <button className="button-primary action-button export-zip-button" disabled type="button">
+          <button className="button-primary action-button action-command-button export-zip-button" disabled type="button">
             <Archive aria-hidden="true" size={17} />
             Export ZIP
           </button>
@@ -157,7 +188,6 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
           onClose={() => setDetailView(null)}
           uploadRecord={uploadRecord}
           validationReport={validationReport}
-          xml={generatedXml}
         />
       ) : null}
     </section>
@@ -169,23 +199,21 @@ function DetailModal({
   lines,
   onClose,
   uploadRecord,
-  validationReport,
-  xml
+  validationReport
 }: {
   detailView: Exclude<DetailView, null>;
   lines: Array<Record<string, unknown>>;
   onClose: () => void;
   uploadRecord: UploadRecord | null;
   validationReport: ValidationReport | null;
-  xml: string;
 }) {
   const title =
     detailView === "validation"
       ? "Validation Details"
-      : detailView === "canonical"
+        : detailView === "canonical"
         ? "Canonical JSON"
-        : detailView === "xml"
-          ? "Generated XML"
+        : detailView === "outputs"
+          ? "Generated Outputs"
           : "Invoice Lines";
 
   return (
@@ -200,28 +228,126 @@ function DetailModal({
         {detailView === "validation" ? <ValidationDetails report={validationReport} uploadRecord={uploadRecord} /> : null}
         {detailView === "canonical" ? <CanonicalDetails uploadRecord={uploadRecord} /> : null}
         {detailView === "lines" ? <InvoiceLineDetails lines={lines} /> : null}
-        {detailView === "xml" ? <XmlDetails uploadRecord={uploadRecord} xml={xml} /> : null}
+        {detailView === "outputs" ? <GeneratedOutputDetails uploadRecord={uploadRecord} /> : null}
       </section>
     </div>
   );
 }
 
-function XmlDetails({ uploadRecord, xml }: { uploadRecord: UploadRecord | null; xml: string }) {
+function GeneratedOutputDetails({ uploadRecord }: { uploadRecord: UploadRecord | null }) {
+  const hasQr = Boolean(uploadRecord && hasStoredEvidenceFile(uploadRecord, "qr.png"));
+  const hasPdf = Boolean(uploadRecord && hasStoredEvidenceFile(uploadRecord, "invoice_arabic_bilingual_visual.pdf"));
+  const [decodedQrPayload, setDecodedQrPayload] = useState<DecodedQrPayload | null>(null);
+  const [decodedQrError, setDecodedQrError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    if (!uploadRecord || !hasQr) {
+      setDecodedQrPayload(null);
+      setDecodedQrError("");
+      return () => {
+        active = false;
+      };
+    }
+
+    void fetchGeneratedQrPayloadDecoded(uploadRecord.upload_id)
+      .then((payload) => {
+        if (active) setDecodedQrPayload(payload);
+      })
+      .catch(() => {
+        if (active) setDecodedQrError("Decoded QR payload is not available.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [hasQr, uploadRecord?.upload_id]);
+
   if (!uploadRecord) {
-    return <p className="muted compact">Generated XML is available after successful Belgium generation.</p>;
+    return <p className="muted compact">Generated outputs are available after successful generation.</p>;
   }
-  if (!uploadRecord?.generated_xml_path && !xml) {
-    return <p className="muted compact">Generated XML is available after successful Belgium generation.</p>;
+  if (!uploadRecord.generated_xml_path) {
+    return <p className="muted compact">Generated outputs are available after successful generation.</p>;
   }
 
   return (
     <div className="modal-stack">
-      <div className="modal-link-row">
-        <a href={generatedXmlUrl(uploadRecord.upload_id)} target="_blank" rel="noreferrer">Open XML</a>
-        <a href={generatedXmlDownloadUrl(uploadRecord.upload_id)}>Download XML</a>
+      <div className="output-artefact-list">
+        <article className="output-artefact">
+          <FileText aria-hidden="true" size={19} />
+          <div>
+            <strong>Invoice XML</strong>
+            <span>Offline generated output</span>
+          </div>
+          <div className="output-artefact-links">
+            <a aria-label="Open invoice XML" className="output-artefact-action" href={generatedXmlUrl(uploadRecord.upload_id)} rel="noreferrer" target="_blank" title="Open invoice XML">
+              <ExternalLink aria-hidden="true" size={15} />
+            </a>
+            <a aria-label="Download invoice XML" className="output-artefact-action" href={generatedXmlDownloadUrl(uploadRecord.upload_id)} title="Download invoice XML">
+              <Download aria-hidden="true" size={15} />
+            </a>
+          </div>
+        </article>
+        {hasQr ? (
+          <article className="output-artefact output-artefact-qr">
+            <img alt="Saudi QR code" src={generatedQrUrl(uploadRecord.upload_id)} />
+            <div>
+              <strong>QR code</strong>
+              <span>Phase-1-style tags 1-5 only</span>
+            </div>
+            <div className="output-artefact-links">
+              <a aria-label="Open QR image" className="output-artefact-action" href={generatedQrUrl(uploadRecord.upload_id)} rel="noreferrer" target="_blank" title="Open QR image">
+                <ExternalLink aria-hidden="true" size={15} />
+              </a>
+              <a aria-label="Download QR image" className="output-artefact-action" href={generatedQrDownloadUrl(uploadRecord.upload_id)} title="Download QR image">
+                <Download aria-hidden="true" size={15} />
+              </a>
+              <a aria-label="Download decoded QR JSON" className="output-artefact-action" href={generatedQrPayloadDecodedDownloadUrl(uploadRecord.upload_id)} title="Download decoded QR JSON">
+                <Code2 aria-hidden="true" size={15} />
+              </a>
+            </div>
+            <p className="qr-output-note">Normal QR scanners may show an encoded TLV string. Use the decoded QR payload view to inspect the invoice fields.</p>
+          </article>
+        ) : null}
+        {hasPdf ? (
+          <article className="output-artefact">
+            <FileText aria-hidden="true" size={19} />
+            <div>
+              <strong>Arabic/bilingual visual PDF</strong>
+              <span>Visual only, not a PDF/A-3 e-invoice</span>
+            </div>
+            <div className="output-artefact-links">
+              <a aria-label="Open visual PDF" className="output-artefact-action" href={generatedPdfUrl(uploadRecord.upload_id)} rel="noreferrer" target="_blank" title="Open visual PDF">
+                <ExternalLink aria-hidden="true" size={15} />
+              </a>
+              <a aria-label="Download visual PDF" className="output-artefact-action" href={generatedPdfDownloadUrl(uploadRecord.upload_id)} title="Download visual PDF">
+                <Download aria-hidden="true" size={15} />
+              </a>
+            </div>
+          </article>
+        ) : null}
       </div>
-      <pre className="json-preview">{xml || "Generated XML is stored and available from the links above."}</pre>
+      {decodedQrPayload ? (
+        <section aria-label="Decoded QR payload" className="qr-decoded-payload">
+          <h4>Decoded QR payload</h4>
+          <dl>
+            {decodedQrPayload.tags.map((tag) => (
+              <div key={tag.tag}>
+                <dt>Tag {tag.tag}: {tag.label}</dt>
+                <dd>{tag.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
+      {decodedQrError ? <p className="muted compact">{decodedQrError}</p> : null}
     </div>
+  );
+}
+
+function hasStoredEvidenceFile(uploadRecord: UploadRecord, filename: string): boolean {
+  return uploadRecord.evidence_bundle_preview.files.some(
+    (file) => file.filename === filename && file.status === "stored" && Boolean(file.storage_path)
   );
 }
 
