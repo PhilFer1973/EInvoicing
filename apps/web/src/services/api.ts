@@ -3,6 +3,7 @@ import type {
   CountryPack,
   CountryPackList,
   DecodedQrPayload,
+  EInvoiceBEConfigurationStatus,
   StorecoveConfigurationStatus,
   UploadRecord,
   ValidationReport
@@ -84,6 +85,12 @@ export async function validateUpload(uploadId: string): Promise<ValidationReport
   });
 }
 
+export async function validateUploadPipeline(uploadId: string): Promise<UploadRecord> {
+  return request<UploadRecord>(`/api/uploads/${uploadId}/validate-pipeline`, {
+    method: "POST"
+  });
+}
+
 export async function generateOutput(uploadId: string): Promise<UploadRecord["evidence_bundle_preview"]> {
   return request<UploadRecord["evidence_bundle_preview"]>(`/api/uploads/${uploadId}/generate`, {
     method: "POST"
@@ -94,8 +101,18 @@ export async function fetchStorecoveSandboxConfiguration(): Promise<StorecoveCon
   return request<StorecoveConfigurationStatus>("/api/uploads/storecove-sandbox/configuration");
 }
 
+export async function fetchEInvoiceBEConfiguration(): Promise<EInvoiceBEConfigurationStatus> {
+  return request<EInvoiceBEConfigurationStatus>("/api/uploads/einvoicebe/configuration");
+}
+
 export async function sendToStorecoveSandbox(uploadId: string): Promise<UploadRecord> {
   return request<UploadRecord>(`/api/uploads/${uploadId}/storecove-sandbox`, {
+    method: "POST"
+  });
+}
+
+export async function validateWithEInvoiceBE(uploadId: string): Promise<UploadRecord> {
+  return request<UploadRecord>(`/api/uploads/${uploadId}/einvoicebe-validation`, {
     method: "POST"
   });
 }

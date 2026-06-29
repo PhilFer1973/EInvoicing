@@ -105,7 +105,14 @@ async def test_canonical_invoice_contains_expected_sections(client: AsyncClient)
     canonical = payload["canonical_invoice"]
 
     assert canonical["seller"]["legal_name"] == "Demo Belgium Services BV"
+    assert canonical["seller"]["tax_registration_number"] == "BE0990251719"
+    assert canonical["seller"]["company_number"] == "0990251719"
+    assert canonical["seller"]["enterprise_number"] == "0990251719"
+    assert canonical["seller"]["peppol_id"] == "0208:0990251719"
     assert canonical["buyer"]["legal_name"] == "Demo Belgium Buyer NV"
+    assert canonical["buyer"]["tax_registration_number"] == "BE0987654394"
+    assert canonical["buyer"]["enterprise_number"] == "0987654394"
+    assert canonical["buyer"]["peppol_id"] == "0208:0987654394"
     assert canonical["invoice"]["invoice_number"] == "INV-BE-2026-001"
     assert canonical["lines"][0]["description"] == "Consulting services"
     assert canonical["tax_summary"] == [
@@ -184,8 +191,14 @@ async def test_generated_xml_contains_expected_belgium_values(client: AsyncClien
     assert "<cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</cbc:CustomizationID>" in xml
     assert "<cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>" in xml
     assert "<cbc:ID>INV-BE-2026-001</cbc:ID>" in xml
-    assert "<cbc:CompanyID>BE0123456789</cbc:CompanyID>" in xml
-    assert "<cbc:CompanyID>BE0987654321</cbc:CompanyID>" in xml
+    assert '<cbc:EndpointID schemeID="0208">0990251719</cbc:EndpointID>' in xml
+    assert '<cbc:ID schemeID="0208">0990251719</cbc:ID>' in xml
+    assert "<cbc:CompanyID>BE0990251719</cbc:CompanyID>" in xml
+    assert '<cbc:CompanyID schemeID="0208">0990251719</cbc:CompanyID>' in xml
+    assert '<cbc:EndpointID schemeID="0208">0987654394</cbc:EndpointID>' in xml
+    assert '<cbc:ID schemeID="0208">0987654394</cbc:ID>' in xml
+    assert "<cbc:CompanyID>BE0987654394</cbc:CompanyID>" in xml
+    assert '<cbc:CompanyID schemeID="0208">0987654394</cbc:CompanyID>' in xml
     assert "<cbc:BuyerReference>BE-BUYER-REF-001</cbc:BuyerReference>" in xml
     assert '<cbc:TaxAmount currencyID="EUR">210.00</cbc:TaxAmount>' in xml
     assert '<cbc:PayableAmount currencyID="EUR">1210.00</cbc:PayableAmount>' in xml

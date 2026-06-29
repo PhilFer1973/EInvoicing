@@ -12,6 +12,7 @@ UK_SANDBOX_WORDING = (
     "UK Peppol sandbox test only. This tests Peppol-style invoice readiness through a sandbox provider. "
     "It does not prove final UK 2029 statutory compliance."
 )
+EINVOICEBE_NOT_RUN = "External e-invoice.be validation not run."
 
 
 def official_validation_note(country_pack_id: str) -> str:
@@ -87,6 +88,7 @@ def build_evidence_metadata(record: UploadRecord, country_pack: CountryPack) -> 
             "official_validator_status": report.summary.official_artefact_validation,
         },
         "generated_outputs": generated_outputs,
+        "xml_generation_for_validation": _xml_generation_for_validation_metadata(record),
         "warning_acknowledgement": {
             "required_rule_ids": acknowledgement_rules,
             "acknowledged_rule_ids": acknowledged_rules,
@@ -108,5 +110,40 @@ def build_evidence_metadata(record: UploadRecord, country_pack: CountryPack) -> 
             if record.selected_country_pack == "uk_info"
             else None
         ),
+        "external_validation": _external_validation_metadata(record),
         "v1_boundary": country_pack.v1_boundary,
+    }
+
+
+def _external_validation_metadata(record: UploadRecord) -> dict[str, Any]:
+    if record.external_validation:
+        return record.external_validation.model_dump(mode="json")
+    if record.selected_country_pack == "belgium_peppol":
+        return {
+            "provider": "e-invoice.be",
+            "status": "not_run",
+            "message": EINVOICEBE_NOT_RUN,
+            "disclaimer": "External sandbox validation only. This does not prove Peppol delivery or final statutory compliance.",
+        }
+    return {"status": "not_applicable"}
+
+
+def _xml_generation_for_validation_metadata(record: UploadRecord) -> dict[str, Any]:
+    if record.selected_country_pack != "belgium_peppol":
+        return {"status": "not_applicable"}
+    if record.generated_xml_path:
+        return {
+            "status": "generated",
+            "filename": "invoice.xml",
+            "sha256": record.generated_xml_sha256_hash,
+            "note": "Belgium UBL XML was generated from canonical invoice JSON for validation/output evidence.",
+        }
+    if record.validation_report.summary.blocking_errors > 0:
+        return {
+            "status": "skipped",
+            "note": "Belgium XML generation for validation was skipped because internal validation has blocking errors.",
+        }
+    return {
+        "status": "not_run",
+        "note": "Belgium XML generation for validation has not run.",
     }

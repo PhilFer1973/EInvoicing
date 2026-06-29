@@ -134,6 +134,178 @@ describe("ReviewExportPanel", () => {
 
     vi.unstubAllGlobals();
   });
+
+  it("uses one Validate button and shows e-invoice.be as not configured through the main validation pipeline", async () => {
+    const updatedUpload: UploadRecord = {
+      ...validBelgiumUpload,
+      generated_xml_path: "server/storage/generated/UP-BE-VALID_belgium_peppol_invoice.xml",
+      generated_xml_sha256_hash: "xml-hash",
+      external_validation: {
+        provider: "e-invoice.be",
+        label: "External sandbox validation",
+        status: "not_configured",
+        is_valid: null,
+        reference: null,
+        validated_at: "2026-06-29T12:00:00+00:00",
+        issue_count: 0,
+        messages: ["External e-invoice.be sandbox validation not configured."],
+        endpoint: "https://api.e-invoice.be/api/validate/ubl",
+        peppol_delivery: "not_delivered",
+        recipient_acceptance: "not_requested",
+        smp_registration_claim: "not_claimed",
+        disclaimer: "External sandbox validation only. This does not prove Peppol delivery or final statutory compliance."
+      }
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(updatedUpload), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    function StatefulPanel() {
+      const [record, setRecord] = useState(validBelgiumUpload);
+      return <ReviewExportPanel pack={belgiumPack} uploadRecord={record} onUploadRecordChange={setRecord} />;
+    }
+
+    render(<StatefulPanel />);
+
+    expect(screen.getAllByRole("button", { name: "Validate" })).toHaveLength(1);
+    expect(screen.queryByText("Validate with e-invoice.be sandbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Validate" }));
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Validation Details" })).toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: "Generated Outputs" })).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/uploads/UP-BE-VALID/validate-pipeline",
+      { method: "POST" }
+    );
+    expect(screen.getByRole("heading", { name: "Internal validation" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "XML generation for validation" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "External sandbox validation" })).toBeInTheDocument();
+    expect(screen.getByText("Belgium XML was generated from canonical invoice JSON for validation/output evidence.")).toBeInTheDocument();
+    expect(screen.getByText("generated")).toBeInTheDocument();
+    expect(screen.getAllByText("External e-invoice.be sandbox validation not configured.").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Belgium XML generation for validation has not run.")).not.toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("shows XML and external validation as skipped when internal blocking errors remain", async () => {
+    const blockedUpload: UploadRecord = {
+      ...validBelgiumUpload,
+      generated_xml_path: null,
+      validation_report: {
+        ...validBelgiumUpload.validation_report,
+        summary: {
+          ...validBelgiumUpload.validation_report.summary,
+          blocking_errors: 1,
+          overall_status: "failed"
+        },
+        results: [
+          {
+            rule_id: "BE-INV-001",
+            layer: "country_validation",
+            severity: "error",
+            status: "failed",
+            message: "Invoice number is required.",
+            field_path: "invoice.invoice_number",
+            country_pack_id: "belgium_peppol",
+            country_pack_version: "0.6.0",
+            corrective_action: "Add an invoice number.",
+            technical_detail: null
+          }
+        ]
+      },
+      external_validation: {
+        provider: "e-invoice.be",
+        label: "External sandbox validation",
+        status: "skipped",
+        is_valid: null,
+        reference: null,
+        validated_at: "2026-06-29T12:00:00+00:00",
+        issue_count: 0,
+        messages: ["External e-invoice.be sandbox validation skipped because internal validation has blocking errors."],
+        endpoint: "https://api.e-invoice.be/api/validate/ubl",
+        peppol_delivery: "not_delivered",
+        recipient_acceptance: "not_requested",
+        smp_registration_claim: "not_claimed",
+        disclaimer: "External sandbox validation only. This does not prove Peppol delivery or final statutory compliance."
+      }
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(blockedUpload), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    function StatefulPanel() {
+      const [record, setRecord] = useState(validBelgiumUpload);
+      return <ReviewExportPanel pack={belgiumPack} uploadRecord={record} onUploadRecordChange={setRecord} />;
+    }
+
+    render(<StatefulPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Validate" }));
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Validation Details" })).toBeInTheDocument());
+    expect(screen.getByText("Skipped due to blocking validation errors")).toBeInTheDocument();
+    expect(screen.getByText("External sandbox validation skipped")).toBeInTheDocument();
+    expect(screen.getByText("External e-invoice.be sandbox validation skipped because internal validation has blocking errors.")).toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("shows external sandbox validation failure separately from internal validation failure", async () => {
+    const updatedUpload: UploadRecord = {
+      ...validBelgiumUpload,
+      generated_xml_path: "server/storage/generated/UP-BE-VALID_belgium_peppol_invoice.xml",
+      generated_xml_sha256_hash: "xml-hash",
+      external_validation: {
+        provider: "e-invoice.be",
+        label: "External sandbox validation",
+        status: "failed",
+        is_valid: false,
+        reference: "EINVBE-VAL-FAILED",
+        validated_at: "2026-06-29T12:00:00+00:00",
+        issue_count: 2,
+        messages: [
+          "Belgian enterprise number MUST be stated in the correct format.",
+          "Belgian enterprise number MUST be stated in the correct format."
+        ],
+        endpoint: "https://api.e-invoice.be/api/validate/ubl",
+        peppol_delivery: "not_delivered",
+        recipient_acceptance: "not_requested",
+        smp_registration_claim: "not_claimed",
+        disclaimer: "External sandbox validation only. This does not prove Peppol delivery or final statutory compliance."
+      },
+      evidence_bundle_preview: {
+        ...validBelgiumUpload.evidence_bundle_preview,
+        status: "belgium_xml_generated_einvoicebe_validated_milestone_5b",
+        files: [
+          ...validBelgiumUpload.evidence_bundle_preview.files,
+          { filename: "invoice.xml", status: "stored", sha256: "xml-hash", storage_path: "generated/invoice.xml" },
+          { filename: "einvoicebe_validation_request.json", status: "stored", sha256: "request-hash", storage_path: "generated/request.json" },
+          { filename: "einvoicebe_validation_response.json", status: "stored", sha256: "response-hash", storage_path: "generated/response.json" },
+          { filename: "external_validation_status.json", status: "stored", sha256: "status-hash", storage_path: "generated/status.json" }
+        ]
+      }
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(updatedUpload), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    function StatefulPanel() {
+      const [record, setRecord] = useState(validBelgiumUpload);
+      return <ReviewExportPanel pack={belgiumPack} uploadRecord={record} onUploadRecordChange={setRecord} />;
+    }
+
+    render(<StatefulPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Validate" }));
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Validation Details" })).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/uploads/UP-BE-VALID/validate-pipeline",
+      { method: "POST" }
+    );
+    expect(screen.getByText("External sandbox validation failed")).toBeInTheDocument();
+    expect(screen.getAllByText("Belgian enterprise number MUST be stated in the correct format.")).toHaveLength(1);
+    expect(screen.queryByText("Internal validation failed")).not.toBeInTheDocument();
+    expect(screen.getByText("External sandbox validation only. This does not prove Peppol delivery or final statutory compliance.")).toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
 });
 
 const saudiPack: CountryPack = {
@@ -314,6 +486,111 @@ const validUkUpload: UploadRecord = {
       { filename: "storecove_request.json", status: "pending_sandbox_test", sha256: null, storage_path: null }
     ],
     v1_boundary: "UK Peppol sandbox test only."
+  }
+};
+
+const belgiumPack: CountryPack = {
+  country_pack_id: "belgium_peppol",
+  display_name: "Belgium / Peppol BIS Billing 3.0",
+  country_code: "BE",
+  pack_version: "0.4.0",
+  support_level: "ubl_xml_generation",
+  v1_boundary: "Belgium generated XML only. No Peppol transmission.",
+  v1_boundary_warning: "Generated only.",
+  output_profiles: ["peppol_bis_billing_3_0_ubl_invoice"],
+  default_output_profile: "peppol_bis_billing_3_0_ubl_invoice",
+  requires_pdf: false,
+  requires_qr: false,
+  requires_signature: false,
+  requires_live_submission_for_validity: false,
+  live_submission_supported: false,
+  live_clearance_supported: false,
+  production_signing_supported: false,
+  official_artefact_validation: "not_configured",
+  legal_regime_summary: "Belgium B2B structured e-invoicing requirement.",
+  scope: ["Belgium domestic B2B services."],
+  mandatory_format: ["EN 16931 / Peppol BIS Billing 3.0."],
+  transmission_or_clearance_model: ["Peppol or agreed structured alternative."],
+  qr_signature_requirements: ["No QR requirement."],
+  retention_or_audit_notes: ["Retain evidence."],
+  v1_app_capability: ["Generated XML only."],
+  official_sources: [{ label: "Belgium e-invoicing", url: "https://finances.belgium.be" }],
+  regime_summary: "",
+  legal_invoice_requirements: [],
+  einvoice_requirements: [],
+  source_status: [],
+  boundary_highlights: [],
+  last_reviewed: "2026-06-29"
+};
+
+const validBelgiumUpload: UploadRecord = {
+  upload_id: "UP-BE-VALID",
+  original_filename: "BE-VALID-001.xlsx",
+  selected_country_pack: "belgium_peppol",
+  selected_output_profile: "peppol_bis_billing_3_0_ubl_invoice",
+  workbook_sha256_hash: "hash",
+  status: "validated",
+  stored_workbook_path: "server/storage/uploads/BE-VALID-001.xlsx",
+  canonical_json_path: "server/storage/canonical/UP-BE-VALID_canonical_invoice.json",
+  validation_report_path: "server/storage/validation/UP-BE-VALID_validation_report.json",
+  generated_xml_path: null,
+  generated_xml_sha256_hash: null,
+  generated_at: null,
+  canonical_invoice: {
+    invoice: {
+      invoice_number: "INV-BE-2026-001",
+      invoice_date: "2026-06-24",
+      invoice_currency_code: "EUR",
+      selected_country_pack: "belgium_peppol",
+      selected_output_profile: "peppol_bis_billing_3_0_ubl_invoice"
+    },
+    seller: {
+      legal_name: "Demo Belgium Services BV",
+      tax_registration_number: "BE0990251719",
+      enterprise_number: "0990251719",
+      legal_registration_number: "0990251719",
+      peppol_id: "0208:0990251719"
+    },
+    buyer: {
+      legal_name: "Demo Belgium Buyer NV",
+      tax_registration_number: "BE0987654394",
+      enterprise_number: "0987654394",
+      legal_registration_number: "0987654394",
+      peppol_id: "0208:0987654394"
+    },
+    lines: [{ line_number: 1, description: "Consulting services" }],
+    tax_summary: [{ tax_category_code: "S", tax_rate: "21", taxable_amount: "1000.00", tax_amount: "210.00" }],
+    totals: { net_total: 1000, tax_total: 210, gross_total: 1210 },
+    source: {},
+    metadata: {}
+  },
+  validation_report: {
+    summary: {
+      overall_status: "passed",
+      internal_validation: "passed",
+      official_artefact_validation: "not_configured",
+      blocking_errors: 0,
+      warnings_ack_required: 0,
+      warnings: 0,
+      passed_checks: 8
+    },
+    results: []
+  },
+  evidence_bundle_preview: {
+    generation_id: "GEN-PREVIEW",
+    country_pack_id: "belgium_peppol",
+    country_pack_version: "0.4.0",
+    output_profile_id: "peppol_bis_billing_3_0_ubl_invoice",
+    status: "skeleton_only_milestone_1",
+    files: [
+      { filename: "invoice.xml", status: "pending_generation", sha256: null, storage_path: null },
+      { filename: "canonical_invoice.json", status: "stored", sha256: "hash", storage_path: "canonical.json" },
+      { filename: "validation_report.json", status: "stored", sha256: "hash", storage_path: "validation.json" },
+      { filename: "einvoicebe_validation_request.json", status: "pending_external_validation", sha256: null, storage_path: null },
+      { filename: "einvoicebe_validation_response.json", status: "pending_external_validation", sha256: null, storage_path: null },
+      { filename: "external_validation_status.json", status: "pending_external_validation", sha256: null, storage_path: null }
+    ],
+    v1_boundary: "Belgium generated XML only."
   }
 };
 

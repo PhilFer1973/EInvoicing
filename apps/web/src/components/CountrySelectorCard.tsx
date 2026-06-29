@@ -13,7 +13,7 @@ export function CountrySelectorCard({ packs, selectedPackId, onSelect }: Country
     <section className="card stack" aria-labelledby="country-pack-heading">
       <div className="panel-title-row">
         <span className="panel-number">01</span>
-        <h2 id="country-pack-heading">Workflow / Validation</h2>
+        <h2 id="country-pack-heading">Region select / Import</h2>
       </div>
       <label className="field-label" htmlFor="country-pack-select">Country / Regime</label>
       <select

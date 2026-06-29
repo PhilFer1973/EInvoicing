@@ -17,9 +17,16 @@ import {
   generatedXmlDownloadUrl,
   generatedXmlUrl,
   sendToStorecoveSandbox,
-  validateUpload
+  validateUploadPipeline
 } from "../services/api";
-import type { CountryPack, DecodedQrPayload, StorecoveConfigurationStatus, UploadRecord, ValidationReport } from "../types";
+import type {
+  CountryPack,
+  DecodedQrPayload,
+  ExternalValidationRecord,
+  StorecoveConfigurationStatus,
+  UploadRecord,
+  ValidationReport
+} from "../types";
 
 interface ReviewExportPanelProps {
   pack: CountryPack | null;
@@ -29,7 +36,9 @@ interface ReviewExportPanelProps {
 
 type DetailView = "validation" | "canonical" | "lines" | "outputs" | null;
 
-export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: ReviewExportPanelProps) {
+export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, onUploadRecordChange }: ReviewExportPanelProps) {
+  const [localUploadRecord, setLocalUploadRecord] = useState<UploadRecord | null>(incomingUploadRecord);
+  const uploadRecord = localUploadRecord;
   const hasRegimeMismatch = Boolean(
     uploadRecord?.validation_report.results.some((result) => result.rule_id === "WB-REGIME-001" && result.status === "failed")
   );
@@ -45,8 +54,10 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isAcknowledging, setIsAcknowledging] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [validationPipelineAttempted, setValidationPipelineAttempted] = useState(false);
   const [generationError, setGenerationError] = useState("");
   const [storecoveConfig, setStorecoveConfig] = useState<StorecoveConfigurationStatus | null>(null);
+  const isBelgiumPack = pack?.country_pack_id === "belgium_peppol";
   const isSaudiPack = pack?.country_pack_id === "saudi_zatca";
   const isUkPack = pack?.country_pack_id === "uk_info";
   const acknowledgementRequired = isSaudiPack && (validationReport?.summary.warnings_ack_required ?? 0) > 0;
@@ -82,11 +93,13 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
   const isActionEnabled = isUkPack ? canSendStorecoveSandbox : canGenerate;
 
   useEffect(() => {
-    setValidationReport(uploadRecord?.validation_report ?? null);
+    setLocalUploadRecord(incomingUploadRecord);
+    setValidationReport(incomingUploadRecord?.validation_report ?? null);
     setDetailView(null);
     setGenerationError("");
     setIsExporting(false);
-  }, [uploadRecord?.upload_id]);
+    setValidationPipelineAttempted(false);
+  }, [incomingUploadRecord?.upload_id]);
 
   useEffect(() => {
     if (!isExporting) return;
@@ -129,11 +142,14 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
     if (!uploadRecord) return;
     setIsValidating(true);
     try {
-      const report = await validateUpload(uploadRecord.upload_id);
-      setValidationReport(report);
-      onUploadRecordChange?.({ ...uploadRecord, validation_report: report });
+      const record = await validateUploadPipeline(uploadRecord.upload_id);
+      setLocalUploadRecord(record);
+      setValidationReport(record.validation_report);
+      onUploadRecordChange?.(record);
+      setValidationPipelineAttempted(true);
       setDetailView("validation");
     } catch {
+      setValidationPipelineAttempted(true);
       setDetailView("validation");
     } finally {
       setIsValidating(false);
@@ -147,13 +163,15 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
     try {
       const evidence = await generateOutput(uploadRecord.upload_id);
       const xmlFile = evidence.files.find((file) => file.filename === "invoice.xml");
-      onUploadRecordChange?.({
+      const nextRecord = {
         ...uploadRecord,
         status: "generated",
         evidence_bundle_preview: evidence,
         generated_xml_path: xmlFile?.storage_path ?? uploadRecord.generated_xml_path,
         generated_xml_sha256_hash: xmlFile?.sha256 ?? uploadRecord.generated_xml_sha256_hash
-      });
+      };
+      setLocalUploadRecord(nextRecord);
+      onUploadRecordChange?.(nextRecord);
       setDetailView("outputs");
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "XML generation failed");
@@ -168,6 +186,7 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
     setGenerationError("");
     try {
       const record = await sendToStorecoveSandbox(uploadRecord.upload_id);
+      setLocalUploadRecord(record);
       onUploadRecordChange?.(record);
       setDetailView("outputs");
     } catch (error) {
@@ -183,6 +202,7 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
     setGenerationError("");
     try {
       const record = await acknowledgeBoundaryWarnings(uploadRecord.upload_id);
+      setLocalUploadRecord(record);
       onUploadRecordChange?.(record);
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Could not acknowledge the Saudi V1 boundary");
@@ -291,6 +311,7 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
           detailView={detailView}
           lines={lines}
           onClose={() => setDetailView(null)}
+          pipelineAttempted={validationPipelineAttempted}
           uploadRecord={uploadRecord}
           validationReport={validationReport}
         />
@@ -303,12 +324,14 @@ function DetailModal({
   detailView,
   lines,
   onClose,
+  pipelineAttempted,
   uploadRecord,
   validationReport
 }: {
   detailView: Exclude<DetailView, null>;
   lines: Array<Record<string, unknown>>;
   onClose: () => void;
+  pipelineAttempted: boolean;
   uploadRecord: UploadRecord | null;
   validationReport: ValidationReport | null;
 }) {
@@ -330,7 +353,13 @@ function DetailModal({
             <X aria-hidden="true" size={18} />
           </button>
         </div>
-        {detailView === "validation" ? <ValidationDetails report={validationReport} uploadRecord={uploadRecord} /> : null}
+        {detailView === "validation" ? (
+          <ValidationDetails
+            pipelineAttempted={pipelineAttempted}
+            report={validationReport}
+            uploadRecord={uploadRecord}
+          />
+        ) : null}
         {detailView === "canonical" ? <CanonicalDetails uploadRecord={uploadRecord} /> : null}
         {detailView === "lines" ? <InvoiceLineDetails lines={lines} /> : null}
         {detailView === "outputs" ? <GeneratedOutputDetails uploadRecord={uploadRecord} /> : null}
@@ -406,6 +435,25 @@ function GeneratedOutputDetails({ uploadRecord }: { uploadRecord: UploadRecord |
             </div>
           </article>
         ) : null}
+        {uploadRecord.external_validation ? (
+          <article className={`output-artefact external-validation-output ${uploadRecord.external_validation.status}`}>
+            <ListChecks aria-hidden="true" size={19} />
+            <div>
+              <strong>External sandbox validation</strong>
+              <span>{formatExternalValidationStatus(uploadRecord.external_validation.status, uploadRecord.external_validation.is_valid)}</span>
+              <small>{uploadRecord.external_validation.validated_at}</small>
+              {uploadRecord.external_validation.reference ? <small>{uploadRecord.external_validation.reference}</small> : null}
+            </div>
+            <p className="external-validation-disclaimer">{uploadRecord.external_validation.disclaimer}</p>
+            {uploadRecord.external_validation.messages.length ? (
+              <ul className="external-validation-messages">
+                {uniqueMessages(uploadRecord.external_validation.messages).map((message, index) => (
+                  <li key={`${message}-${index}`}>{message}</li>
+                ))}
+              </ul>
+            ) : null}
+          </article>
+        ) : null}
         {hasQr ? (
           <article className="output-artefact output-artefact-qr">
             <img alt="Saudi QR code" src={generatedQrUrl(uploadRecord.upload_id)} />
@@ -469,35 +517,71 @@ function hasStoredEvidenceFile(uploadRecord: UploadRecord, filename: string): bo
   );
 }
 
-function ValidationDetails({ report, uploadRecord }: { report: ValidationReport | null; uploadRecord: UploadRecord | null }) {
+function ValidationDetails({
+  pipelineAttempted,
+  report,
+  uploadRecord
+}: {
+  pipelineAttempted: boolean;
+  report: ValidationReport | null;
+  uploadRecord: UploadRecord | null;
+}) {
   if (!report) {
     return <p className="muted compact">Upload and validate a workbook to view validation details.</p>;
   }
+  const externalValidation = uploadRecord?.external_validation ?? null;
 
   return (
     <div className="modal-stack">
-      <div className="validation-summary-row">
-        <span><strong>{report.summary.blocking_errors}</strong>Block</span>
-        <span><strong>{report.summary.warnings_ack_required}</strong>Ack</span>
-        <span><strong>{report.summary.warnings}</strong>Warning</span>
-        <span><strong>{report.summary.passed_checks}</strong>Passed</span>
-      </div>
-      {uploadRecord?.canonical_invoice ? (
-        <div className="modal-link-row">
-          <a href={canonicalInvoiceUrl(uploadRecord.upload_id)} target="_blank" rel="noreferrer">Open canonical JSON</a>
-          <a href={canonicalInvoiceDownloadUrl(uploadRecord.upload_id)}>Download canonical JSON</a>
+      <section className="validation-detail-group">
+        <h4>Internal validation</h4>
+        <div className="validation-summary-row">
+          <span><strong>{report.summary.blocking_errors}</strong>Block</span>
+          <span><strong>{report.summary.warnings_ack_required}</strong>Ack</span>
+          <span><strong>{report.summary.warnings}</strong>Warning</span>
+          <span><strong>{report.summary.passed_checks}</strong>Passed</span>
         </div>
-      ) : null}
-      <div className="validation-result-list">
-        {report.results.map((result, index) => (
-          <article className={`validation-result-item ${result.severity}`} key={`${result.rule_id}-${index}`}>
-            <strong>{result.rule_id}</strong>
-            <span>{result.status.replaceAll("_", " ")}</span>
-            <p>{result.message}</p>
-            {result.corrective_action ? <small>{result.corrective_action}</small> : null}
-          </article>
-        ))}
-      </div>
+        {uploadRecord?.canonical_invoice ? (
+          <div className="modal-link-row">
+            <a href={canonicalInvoiceUrl(uploadRecord.upload_id)} target="_blank" rel="noreferrer">Open canonical JSON</a>
+            <a href={canonicalInvoiceDownloadUrl(uploadRecord.upload_id)}>Download canonical JSON</a>
+          </div>
+        ) : null}
+        <div className="validation-result-list">
+          {report.results.map((result, index) => (
+            <article className={`validation-result-item ${result.severity}`} key={`${result.rule_id}-${index}`}>
+              <strong>{result.rule_id}</strong>
+              <span>{result.status.replaceAll("_", " ")}</span>
+              <p>{result.message}</p>
+              {result.corrective_action ? <small>{result.corrective_action}</small> : null}
+            </article>
+          ))}
+        </div>
+      </section>
+      <section className="validation-detail-group">
+        <h4>XML generation for validation</h4>
+        <article className={`validation-result-item ${xmlGenerationTone(uploadRecord, report, pipelineAttempted)}`}>
+          <strong>{xmlGenerationStatusLabel(uploadRecord, report, pipelineAttempted)}</strong>
+          <span>{xmlGenerationStatusDetail(uploadRecord, report, pipelineAttempted)}</span>
+          <p>{xmlGenerationStatusMessage(uploadRecord, report, pipelineAttempted)}</p>
+        </article>
+      </section>
+      <section className="validation-detail-group">
+        <h4>External sandbox validation</h4>
+        <article className={`validation-result-item ${externalValidationTone(externalValidation)}`}>
+          <strong>{externalValidationStatusTitle(externalValidation)}</strong>
+          <span>{externalValidation?.status?.replaceAll("_", " ") ?? "not run"}</span>
+          <p>{externalValidationStatusMessage(externalValidation)}</p>
+          <small>External sandbox validation only. This does not prove Peppol delivery or final statutory compliance.</small>
+          {externalValidation?.status === "failed" && externalValidation.messages.length ? (
+            <ul className="external-validation-messages in-validation-details">
+              {uniqueMessages(externalValidation.messages).map((message, index) => (
+                <li key={`${message}-${index}`}>{message}</li>
+              ))}
+            </ul>
+          ) : null}
+        </article>
+      </section>
     </div>
   );
 }
@@ -573,4 +657,78 @@ function formatMoney(value: unknown): string {
     maximumFractionDigits: 2,
     minimumFractionDigits: 2
   }).format(amount);
+}
+
+function formatExternalValidationStatus(status: string, isValid: boolean | null): string {
+  if (status === "passed" || isValid === true) return "Provider result: passed";
+  if (status === "failed" || isValid === false) return "External sandbox validation failed";
+  return `Provider result: ${status.replaceAll("_", " ")}`;
+}
+
+function xmlGenerationTone(uploadRecord: UploadRecord | null, report: ValidationReport, pipelineAttempted: boolean): string {
+  if (uploadRecord?.generated_xml_path) return "info";
+  if (uploadRecord?.selected_country_pack !== "belgium_peppol") return "info";
+  if (report.summary.blocking_errors > 0) return "warning";
+  if (pipelineAttempted) return "error";
+  return "warning";
+}
+
+function xmlGenerationStatusLabel(uploadRecord: UploadRecord | null, report: ValidationReport, pipelineAttempted: boolean): string {
+  if (uploadRecord?.generated_xml_path) return "Passed";
+  if (uploadRecord?.selected_country_pack !== "belgium_peppol") return "Not required";
+  if (report.summary.blocking_errors > 0) return "Skipped due to blocking validation errors";
+  if (pipelineAttempted) return "Failed";
+  return "Not run";
+}
+
+function xmlGenerationStatusDetail(uploadRecord: UploadRecord | null, report: ValidationReport, pipelineAttempted: boolean): string {
+  if (uploadRecord?.generated_xml_path) return "generated";
+  if (uploadRecord?.selected_country_pack !== "belgium_peppol") return "not required";
+  if (report.summary.blocking_errors > 0) return "skipped";
+  if (pipelineAttempted) return "failed";
+  return "not run";
+}
+
+function xmlGenerationStatusMessage(uploadRecord: UploadRecord | null, report: ValidationReport, pipelineAttempted: boolean): string {
+  if (uploadRecord?.generated_xml_path) return "Belgium XML was generated from canonical invoice JSON for validation/output evidence.";
+  if (uploadRecord?.selected_country_pack !== "belgium_peppol") return "XML generation for external Belgium sandbox validation is not required for this country pack.";
+  if (report.summary.blocking_errors > 0) return "Belgium XML generation for validation was skipped because internal validation has blocking errors.";
+  if (pipelineAttempted) return "Belgium XML generation for validation did not complete. Check backend logs and retry validation.";
+  return "Belgium XML generation for validation has not run.";
+}
+
+function externalValidationTone(externalValidation: ExternalValidationRecord | null): string {
+  if (!externalValidation) return "info";
+  if (externalValidation.status === "failed") return "warning";
+  if (externalValidation.status === "passed") return "info";
+  return "warning";
+}
+
+function externalValidationStatusTitle(externalValidation: ExternalValidationRecord | null): string {
+  if (!externalValidation) return "External sandbox validation not run";
+  if (externalValidation.status === "failed") return "External sandbox validation failed";
+  if (externalValidation.status === "passed") return "External sandbox validation passed";
+  if (externalValidation.status === "skipped") return "External sandbox validation skipped";
+  if (externalValidation.status === "not_configured") return "External e-invoice.be sandbox validation not configured.";
+  return `External sandbox validation ${externalValidation.status.replaceAll("_", " ")}`;
+}
+
+function externalValidationStatusMessage(externalValidation: ExternalValidationRecord | null): string {
+  if (!externalValidation) return "External e-invoice.be sandbox validation has not run for this upload.";
+  if (externalValidation.status === "not_configured") return "External e-invoice.be sandbox validation not configured.";
+  if (externalValidation.status === "skipped") return externalValidation.messages[0] ?? "External sandbox validation skipped.";
+  if (externalValidation.status === "not_run") return externalValidation.messages[0] ?? "External sandbox validation not run.";
+  if (externalValidation.status === "failed") return "The external provider returned validation issues for the generated Belgium XML.";
+  if (externalValidation.status === "passed") return "The external provider accepted the generated Belgium XML for sandbox validation.";
+  return externalValidation.messages[0] ?? "External sandbox validation status is available.";
+}
+
+function uniqueMessages(messages: string[]): string[] {
+  const seen = new Set<string>();
+  return messages.filter((message) => {
+    const normalised = message.trim();
+    if (!normalised || seen.has(normalised)) return false;
+    seen.add(normalised);
+    return true;
+  });
 }

@@ -117,6 +117,22 @@ export interface DecodedQrPayload {
   }>;
 }
 
+export interface ExternalValidationRecord {
+  provider: string;
+  label: string;
+  status: string;
+  is_valid: boolean | null;
+  reference: string | null;
+  validated_at: string;
+  issue_count: number;
+  messages: string[];
+  endpoint: string;
+  peppol_delivery?: string;
+  recipient_acceptance?: string;
+  smp_registration_claim?: string;
+  disclaimer: string;
+}
+
 export interface UploadRecord {
   upload_id: string;
   original_filename: string;
@@ -133,6 +149,7 @@ export interface UploadRecord {
   storecove_provider_reference?: string | null;
   storecove_submission_status?: string | null;
   storecove_mocked?: boolean;
+  external_validation?: ExternalValidationRecord | null;
   acknowledged_warning_rule_ids?: string[];
   warning_acknowledged_at?: string | null;
   canonical_invoice: CanonicalInvoice | null;
@@ -146,6 +163,17 @@ export interface StorecoveConfigurationStatus {
   api_base_url: string | null;
   missing_fields: string[];
   mode: "disabled" | "missing_credentials" | "configuration_error" | "mocked_sandbox" | string;
+  message: string;
+}
+
+export interface EInvoiceBEConfigurationStatus {
+  enabled: boolean;
+  configured: boolean;
+  api_base_url: string;
+  sandbox_company_number: string;
+  sandbox_peppol_id: string;
+  missing_fields: string[];
+  mode: "disabled" | "missing_credentials" | "sandbox_validation" | string;
   message: string;
 }
 

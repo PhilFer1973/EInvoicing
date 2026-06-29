@@ -44,6 +44,14 @@ class CountryAdapter:
         ]
         if self.pack.country_pack_id in {"belgium_peppol", "saudi_zatca"}:
             files.insert(0, EvidenceFile(filename="invoice.xml", status="pending_generation"))
+        if self.pack.country_pack_id == "belgium_peppol":
+            files.extend(
+                [
+                    EvidenceFile(filename="einvoicebe_validation_request.json", status="pending_external_validation"),
+                    EvidenceFile(filename="einvoicebe_validation_response.json", status="pending_external_validation"),
+                    EvidenceFile(filename="external_validation_status.json", status="pending_external_validation"),
+                ]
+            )
         if self.pack.requires_pdf:
             files.insert(1, EvidenceFile(filename="saudi_visual_invoice.pdf", status="pending_generation"))
         if self.pack.requires_qr:

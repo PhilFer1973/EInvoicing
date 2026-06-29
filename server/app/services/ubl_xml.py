@@ -58,13 +58,13 @@ def _party(parent: ET.Element, wrapper_name: str, party_data: dict[str, Any]) ->
 
     endpoint_id = party_data.get("peppol_id")
     endpoint_scheme = party_data.get("peppol_scheme_id")
-    endpoint_value = _identifier_value(endpoint_id, endpoint_scheme)
+    endpoint_value = _scheme_identifier_value(endpoint_id, endpoint_scheme, party_data)
     if _has_value(endpoint_value):
         element = _text(party, "cbc", "EndpointID", endpoint_value)
         if _has_value(endpoint_scheme):
             element.set("schemeID", str(endpoint_scheme))
 
-    legal_registration = party_data.get("legal_registration_number")
+    legal_registration = _legal_registration_value(party_data)
     if _has_value(legal_registration):
         identification = _child(party, "cac", "PartyIdentification")
         identifier = _text(identification, "cbc", "ID", legal_registration)
@@ -81,7 +81,7 @@ def _party(parent: ET.Element, wrapper_name: str, party_data: dict[str, Any]) ->
     _text(country, "cbc", "IdentificationCode", party_data.get("country_code"))
 
     tax_scheme = _child(party, "cac", "PartyTaxScheme")
-    _text(tax_scheme, "cbc", "CompanyID", party_data.get("tax_registration_number"))
+    _text(tax_scheme, "cbc", "CompanyID", _tax_registration_value(party_data))
     tax_scheme_id = _child(tax_scheme, "cac", "TaxScheme")
     _text(tax_scheme_id, "cbc", "ID", "VAT")
 
@@ -240,3 +240,54 @@ def _identifier_value(identifier: Any, scheme: Any) -> Any:
     if _has_value(scheme) and text.startswith(prefix):
         return text[len(prefix):]
     return identifier
+
+
+def _scheme_identifier_value(identifier: Any, scheme: Any, party_data: dict[str, Any]) -> Any:
+    value = _identifier_value(identifier, scheme)
+    if str(scheme or "").strip() == "0208" and str(party_data.get("country_code") or "").upper() == "BE":
+        return _belgian_enterprise_identifier(value)
+    return value
+
+
+def _legal_registration_value(party_data: dict[str, Any]) -> Any:
+    value = (
+        party_data.get("enterprise_number")
+        or party_data.get("company_number")
+        or party_data.get("legal_registration_number")
+    )
+    if not _has_value(value):
+        return value
+    text = str(value).strip()
+    if text.upper().startswith("BE"):
+        text = text[2:]
+    cleaned = "".join(character for character in text if character.isalnum())
+    if str(party_data.get("country_code") or "").upper() == "BE":
+        return _belgian_enterprise_identifier(cleaned)
+    return cleaned
+
+
+def _tax_registration_value(party_data: dict[str, Any]) -> Any:
+    value = party_data.get("tax_registration_number")
+    if not _has_value(value):
+        return value
+    text = str(value).strip().upper()
+    if str(party_data.get("country_code") or "").upper() != "BE":
+        return text
+    if text.startswith("BE"):
+        text = text[2:]
+    enterprise_number = _belgian_enterprise_identifier(text)
+    return f"BE{enterprise_number}" if _has_value(enterprise_number) else value
+
+
+def _belgian_enterprise_identifier(value: Any) -> Any:
+    if not _has_value(value):
+        return value
+    text = str(value).strip().upper()
+    if text.startswith("BE"):
+        text = text[2:]
+    if ":" in text:
+        text = text.split(":", 1)[1]
+    digits = "".join(character for character in text if character.isdigit())
+    # e-invoice.be returns sandbox company/Peppol identifiers as authoritative text.
+    # Preserve leading zeroes exactly; do not pad or otherwise reformat 0208 values.
+    return digits or value

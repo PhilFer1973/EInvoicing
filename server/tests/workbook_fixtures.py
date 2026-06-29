@@ -13,6 +13,20 @@ def belgium_valid_workbook_bytes(**overrides: Any) -> bytes:
     return stream.getvalue()
 
 
+def belgium_einvoicebe_validation_workbook_bytes(**overrides: Any) -> bytes:
+    workbook = belgium_valid_workbook(
+        seller_legal_name="Test Company BV",
+        seller_vat="BE0990251719",
+        seller_company_number="0990251719",
+        seller_enterprise_number="0990251719",
+        seller_peppol_id="0208:0990251719",
+        **overrides,
+    )
+    stream = BytesIO()
+    workbook.save(stream)
+    return stream.getvalue()
+
+
 def belgium_valid_workbook(
     *,
     remove_sheet: str | None = None,
@@ -20,8 +34,15 @@ def belgium_valid_workbook(
     buyer_reference: str | None = "BE-BUYER-REF-001",
     purchase_order_reference: str | None = "",
     tax_total: float = 210.00,
-    seller_peppol_id: str | None = "0208:0123456789",
-    buyer_peppol_id: str | None = "0208:0987654321",
+    seller_legal_name: str = "Demo Belgium Services BV",
+    seller_vat: str = "BE0990251719",
+    seller_company_number: str = "0990251719",
+    seller_enterprise_number: str = "0990251719",
+    seller_peppol_id: str | None = "0208:0990251719",
+    buyer_vat: str = "BE0987654394",
+    buyer_company_number: str = "0987654394",
+    buyer_enterprise_number: str = "0987654394",
+    buyer_peppol_id: str | None = "0208:0987654394",
     duplicate_invoice_number: bool = False,
     remove_column: tuple[str, str] | None = None,
 ) -> Workbook:
@@ -36,6 +57,8 @@ def belgium_valid_workbook(
             "trading_name",
             "country_code",
             "tax_registration_number",
+            "company_number",
+            "enterprise_number",
             "legal_registration_number",
             "legal_registration_scheme_id",
             "address_line_1",
@@ -55,11 +78,13 @@ def belgium_valid_workbook(
     entities.append(
         [
             "SELLER-BE-1",
-            "Demo Belgium Services BV",
+            seller_legal_name,
             "",
             "BE",
-            "BE0123456789",
-            "0123456789",
+            seller_vat,
+            seller_company_number,
+            seller_enterprise_number,
+            seller_enterprise_number,
             "0208",
             "Rue Demo 1",
             "",
@@ -70,7 +95,7 @@ def belgium_valid_workbook(
             "",
             "BE68539007547034",
             "BBRUBEBB",
-            "Demo Belgium Services BV",
+            seller_legal_name,
             seller_peppol_id,
             "0208" if seller_peppol_id else "",
         ]
@@ -84,6 +109,8 @@ def belgium_valid_workbook(
             "buyer_type",
             "country_code",
             "tax_registration_number",
+            "company_number",
+            "enterprise_number",
             "legal_registration_number",
             "legal_registration_scheme_id",
             "address_line_1",
@@ -102,8 +129,10 @@ def belgium_valid_workbook(
             "Demo Belgium Buyer NV",
             "business",
             "BE",
-            "BE0987654321",
-            "0987654321",
+            buyer_vat,
+            buyer_company_number,
+            buyer_enterprise_number,
+            buyer_enterprise_number,
             "0208",
             "Buyer Street 10",
             "",

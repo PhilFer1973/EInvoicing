@@ -23,6 +23,22 @@ class EvidenceBundlePreview(BaseModel):
     v1_boundary: str
 
 
+class ExternalValidationRecord(BaseModel):
+    provider: str
+    label: str
+    status: str
+    is_valid: bool | None = None
+    reference: str | None = None
+    validated_at: str
+    issue_count: int = 0
+    messages: list[str] = Field(default_factory=list)
+    endpoint: str
+    peppol_delivery: str = "not_delivered"
+    recipient_acceptance: str = "not_requested"
+    smp_registration_claim: str = "not_claimed"
+    disclaimer: str
+
+
 class UploadRecord(BaseModel):
     upload_id: str
     original_filename: str
@@ -39,6 +55,7 @@ class UploadRecord(BaseModel):
     storecove_provider_reference: str | None = None
     storecove_submission_status: str | None = None
     storecove_mocked: bool = False
+    external_validation: ExternalValidationRecord | None = None
     acknowledged_warning_rule_ids: list[str] = Field(default_factory=list)
     warning_acknowledged_at: str | None = None
     canonical_invoice: CanonicalInvoice | None = None

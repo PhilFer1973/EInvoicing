@@ -54,6 +54,7 @@ Open `http://127.0.0.1:5173`. The frontend uses `http://localhost:8000` by defau
 ## Demo Workbooks
 
 - Belgium: `C:\Users\Philip\Downloads\EInvoicing\test_data\workbooks\BE-VALID-001.xlsx`
+- Belgium e-invoice.be sandbox validation: `C:\Users\Philip\Downloads\EInvoicing\test_data\workbooks\BE-EINVOICEBE-VALIDATION-001.xlsx`
 - Saudi Arabia: `C:\Users\Philip\Downloads\EInvoicing\test_data\workbooks\SA-VALID-001.xlsx`
 - United Kingdom: `C:\Users\Philip\Downloads\EInvoicing\test_data\workbooks\UK-PEPPOL-SANDBOX-001.xlsx`
 
@@ -67,6 +68,42 @@ The **Export Template** button downloads a four-sheet starter workbook: `entitie
 4. The generated-output view provides the XML; select **Export ZIP** for the evidence bundle.
 
 The bundle contains the workbook snapshot, canonical invoice, validation report, Belgium XML, country-pack manifest, evidence metadata, and hashes.
+
+### Optional e-invoice.be Sandbox Validation
+
+Milestone 5B adds an optional Belgium-only external sandbox validation stage inside the main **Validate** pipeline. It generates Belgium UBL XML from canonical invoice JSON where needed, validates that XML with e-invoice.be when configured, and stores the provider response as evidence. It does not deliver through Peppol, prove recipient acceptance, prove SMP registration, or prove final statutory compliance.
+
+Default configuration is disabled:
+
+```powershell
+EINVOICEBE_ENABLED=false
+EINVOICEBE_API_BASE_URL=https://api.e-invoice.be
+EINVOICEBE_API_KEY=
+EINVOICEBE_SANDBOX_COMPANY_NUMBER=099025170
+EINVOICEBE_SANDBOX_PEPPOL_ID=0208:099025170
+```
+
+To test locally with your sandbox key, set environment variables in the backend terminal before starting Uvicorn:
+
+```powershell
+cd C:\Users\Philip\Downloads\EInvoicing\server
+$env:EINVOICEBE_ENABLED="true"
+$env:EINVOICEBE_API_BASE_URL="https://api.e-invoice.be"
+$env:EINVOICEBE_API_KEY="your-sandbox-api-key"
+$env:EINVOICEBE_SANDBOX_COMPANY_NUMBER="099025170"
+$env:EINVOICEBE_SANDBOX_PEPPOL_ID="0208:099025170"
+.\.venv\Scripts\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Then:
+
+1. Start the frontend with `npm run dev -- --port 5173`.
+2. Select `Belgium / Peppol BIS Billing 3.0`.
+3. Upload `BE-EINVOICEBE-VALIDATION-001.xlsx`. This sample uses `Test Company BV` with structurally valid Belgian VAT, enterprise and Peppol `0208` identifiers for UBL sandbox validation. The e-invoice.be `/api/me/` company number and Peppol ID remain configuration metadata and are stored separately from the generated UBL identifiers.
+4. Select **Validate**. When configured, this automatically runs internal validation, generates Belgium XML for validation, and runs e-invoice.be sandbox validation.
+5. Select **Generate** to open generated outputs, or **Export ZIP** for the evidence bundle.
+
+The e-invoice.be evidence files are `einvoicebe_validation_request.json`, `einvoicebe_validation_response.json`, and `external_validation_status.json`. API keys are read from environment variables only and are redacted from evidence.
 
 ## Saudi Demo
 
