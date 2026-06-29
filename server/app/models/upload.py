@@ -36,6 +36,9 @@ class UploadRecord(BaseModel):
     generated_xml_path: str | None = None
     generated_xml_sha256_hash: str | None = None
     generated_at: str | None = None
+    storecove_provider_reference: str | None = None
+    storecove_submission_status: str | None = None
+    storecove_mocked: bool = False
     acknowledged_warning_rule_ids: list[str] = Field(default_factory=list)
     warning_acknowledged_at: str | None = None
     canonical_invoice: CanonicalInvoice | None = None

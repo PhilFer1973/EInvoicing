@@ -1077,6 +1077,14 @@ h3 {
   font-size: .7rem;
 }
 
+.output-artefact small {
+  color: #586179;
+  display: block;
+  font-size: .68rem;
+  font-weight: 750;
+  margin-top: 2px;
+}
+
 .output-artefact-links {
   display: flex;
   gap: 6px;
@@ -1271,17 +1279,6 @@ h3 {
 
 .v1-boundary-acknowledgement input {
   accent-color: var(--accent-cyan);
-}
-
-.official-validation-note {
-  background: rgba(84,74,190,.06);
-  border: 1px solid rgba(84,74,190,.14);
-  border-radius: 10px;
-  color: var(--muted);
-  font-size: .73rem;
-  line-height: 1.4;
-  margin: 0;
-  padding: 9px 10px;
 }
 
 .acknowledgement input {

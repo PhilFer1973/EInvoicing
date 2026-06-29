@@ -104,6 +104,36 @@ describe("ReviewExportPanel", () => {
 
     vi.unstubAllGlobals();
   });
+
+  it("keeps Generate disabled for the UK pack when Storecove is not configured", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          sandbox_enabled: false,
+          configured: false,
+          api_base_url: null,
+          missing_fields: [
+            "STORECOVE_API_BASE_URL",
+            "STORECOVE_API_KEY",
+            "STORECOVE_SENDER_LEGAL_ENTITY_ID",
+            "STORECOVE_RECEIVER_LEGAL_ENTITY_ID"
+          ],
+          mode: "disabled",
+          message: "Storecove sandbox is not configured. Add sandbox credentials to enable UK Peppol testing."
+        }),
+        { status: 200 }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReviewExportPanel pack={ukPack} uploadRecord={validUkUpload} onUploadRecordChange={vi.fn()} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("http://localhost:8000/api/uploads/storecove-sandbox/configuration", undefined));
+    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
+    expect(screen.queryByText("Storecove sandbox is not configured. Add sandbox credentials to enable UK Peppol testing.")).not.toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
 });
 
 const saudiPack: CountryPack = {
@@ -194,6 +224,96 @@ const validSaudiUpload: UploadRecord = {
       { filename: "validation_report.json", status: "stored", sha256: "hash", storage_path: "validation.json" }
     ],
     v1_boundary: "Saudi offline XML only."
+  }
+};
+
+const ukPack: CountryPack = {
+  country_pack_id: "uk_info",
+  display_name: "United Kingdom / 2029 Peppol Roadmap",
+  country_code: "GB",
+  pack_version: "0.2.0",
+  support_level: "info_only_roadmap",
+  sandbox_test_available_when_configured: true,
+  v1_boundary: "UK Peppol sandbox test only. This tests Peppol-style invoice readiness through a sandbox provider. It does not prove final UK 2029 statutory compliance.",
+  v1_boundary_warning: "UK Peppol sandbox test only.",
+  output_profiles: ["storecove_peppol_sandbox_readiness_test"],
+  default_output_profile: "storecove_peppol_sandbox_readiness_test",
+  requires_pdf: false,
+  requires_qr: false,
+  requires_signature: false,
+  requires_live_submission_for_validity: false,
+  live_submission_supported: false,
+  live_clearance_supported: false,
+  production_signing_supported: false,
+  official_artefact_validation: "not_configured",
+  legal_regime_summary: "UK mandatory e-invoicing is planned for 2029.",
+  scope: ["UK roadmap."],
+  mandatory_format: ["Peppol has been announced as the UK core interoperability network."],
+  transmission_or_clearance_model: ["Decentralised Peppol-style model."],
+  qr_signature_requirements: ["No QR configured."],
+  retention_or_audit_notes: ["Sandbox-only evidence."],
+  v1_app_capability: ["Sandbox readiness only when configured."],
+  official_sources: [{ label: "Deferred scope", url: "docs/14_open_items_and_deferred_scope.md" }],
+  regime_summary: "",
+  legal_invoice_requirements: [],
+  einvoice_requirements: [],
+  source_status: [],
+  boundary_highlights: ["UK Peppol sandbox test only."],
+  last_reviewed: "2026-06-29"
+};
+
+const validUkUpload: UploadRecord = {
+  upload_id: "UP-UK-VALID",
+  original_filename: "UK-PEPPOL-SANDBOX-001.xlsx",
+  selected_country_pack: "uk_info",
+  selected_output_profile: "storecove_peppol_sandbox_readiness_test",
+  workbook_sha256_hash: "hash",
+  status: "validated",
+  stored_workbook_path: "server/storage/uploads/UK-PEPPOL-SANDBOX-001.xlsx",
+  canonical_json_path: "server/storage/canonical/UP-UK-VALID_canonical_invoice.json",
+  validation_report_path: "server/storage/validation/UP-UK-VALID_validation_report.json",
+  generated_xml_path: null,
+  generated_xml_sha256_hash: null,
+  canonical_invoice: {
+    invoice: {
+      invoice_number: "INV-UK-2029-001",
+      invoice_date: "2026-06-26",
+      invoice_currency_code: "GBP",
+      selected_country_pack: "uk_info",
+      selected_output_profile: "storecove_peppol_sandbox_readiness_test"
+    },
+    seller: { legal_name: "Demo UK Services Ltd", tax_registration_number: "GB123456789" },
+    buyer: { legal_name: "Demo UK Buyer Ltd", tax_registration_number: "GB987654321" },
+    lines: [{ line_number: 1, description: "Consulting services" }],
+    tax_summary: [{ tax_category_code: "S", tax_rate: "20", taxable_amount: "1000.00", tax_amount: "200.00" }],
+    totals: { net_total: 1000, tax_total: 200, gross_total: 1200 },
+    source: {},
+    metadata: {}
+  },
+  validation_report: {
+    summary: {
+      overall_status: "passed",
+      internal_validation: "passed",
+      official_artefact_validation: "not_configured",
+      blocking_errors: 0,
+      warnings_ack_required: 0,
+      warnings: 0,
+      passed_checks: 8
+    },
+    results: []
+  },
+  evidence_bundle_preview: {
+    generation_id: "GEN-PREVIEW",
+    country_pack_id: "uk_info",
+    country_pack_version: "0.2.0",
+    output_profile_id: "storecove_peppol_sandbox_readiness_test",
+    status: "skeleton_only_milestone_1",
+    files: [
+      { filename: "canonical_invoice.json", status: "stored", sha256: "hash", storage_path: "canonical.json" },
+      { filename: "validation_report.json", status: "stored", sha256: "hash", storage_path: "validation.json" },
+      { filename: "storecove_request.json", status: "pending_sandbox_test", sha256: null, storage_path: null }
+    ],
+    v1_boundary: "UK Peppol sandbox test only."
   }
 };
 

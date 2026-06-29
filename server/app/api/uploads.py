@@ -8,6 +8,16 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
+from app.integrations.storecove.client import (
+    StorecoveConfigurationError,
+    build_storecove_evidence_object,
+    load_storecove_config,
+    load_storecove_configuration_status,
+    redact_secrets,
+    submit_storecove_sandbox_mock,
+)
+from app.integrations.storecove.mapper import map_canonical_to_storecove_request
+from app.integrations.storecove.schemas import StorecoveConfigurationStatus, UK_SANDBOX_WORDING
 from app.models.canonical import CanonicalInvoice
 from app.models.upload import EvidenceBundlePreview, UploadRecord
 from app.models.validation import ValidationReport
@@ -19,7 +29,7 @@ from app.services.saudi_xml import generate_saudi_zatca_invoice_xml
 from app.services.upload_store import get_upload, save_upload
 from app.services.ubl_xml import generate_belgium_ubl_invoice_xml
 from app.services.workbook import parse_workbook_upload
-from app.storage.file_store import relative_storage_path, save_binary, storage_path_from_relative
+from app.storage.file_store import relative_storage_path, save_binary, save_json, storage_path_from_relative
 
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -38,6 +48,11 @@ async def create_upload(
     content = await file.read()
     record = parse_workbook_upload(content, file.filename or "upload.xlsx", pack)
     return save_upload(record)
+
+
+@router.get("/storecove-sandbox/configuration", response_model=StorecoveConfigurationStatus)
+def read_storecove_sandbox_configuration() -> StorecoveConfigurationStatus:
+    return load_storecove_configuration_status()
 
 
 @router.get("/{upload_id}", response_model=UploadRecord)
@@ -109,6 +124,12 @@ def download_evidence_bundle(upload_id: str) -> StreamingResponse:
         _write_evidence_file(archive, record, "qr_payload_decoded.json")
         _write_evidence_file(archive, record, "qr.png")
         _write_evidence_file(archive, record, "saudi_visual_invoice.pdf")
+        _write_evidence_file(archive, record, "storecove_request.json")
+        _write_evidence_file(archive, record, "storecove_response.json")
+        _write_evidence_file(archive, record, "storecove_status.json")
+        _write_evidence_file(archive, record, "provider_reference.txt")
+        if record.selected_country_pack == "uk_info":
+            archive.writestr("README_sandbox_only.txt", _uk_sandbox_readme())
         archive.writestr(
             "evidence.json",
             json.dumps(build_evidence_metadata(record, pack), indent=2, sort_keys=True),
@@ -195,6 +216,74 @@ def generate_output(upload_id: str) -> EvidenceBundlePreview:
     record.evidence_bundle_preview.status = evidence_status
     save_upload(record)
     return record.evidence_bundle_preview
+
+
+@router.post("/{upload_id}/storecove-sandbox", response_model=UploadRecord)
+def submit_storecove_sandbox(upload_id: str) -> UploadRecord:
+    record = _require_upload(upload_id)
+    if record.selected_country_pack != "uk_info":
+        raise HTTPException(status_code=400, detail="Storecove sandbox testing is available only for the UK roadmap pack.")
+    if not record.canonical_invoice:
+        raise HTTPException(status_code=400, detail="Canonical invoice JSON is required before Storecove sandbox testing.")
+    if record.validation_report.summary.blocking_errors > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Blocking validation errors must be resolved before Storecove sandbox testing.",
+        )
+
+    try:
+        config = load_storecove_config()
+    except StorecoveConfigurationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    request_payload = map_canonical_to_storecove_request(record.canonical_invoice, config)
+    response_payload, status_payload = submit_storecove_sandbox_mock(request_payload)
+    build_storecove_evidence_object(
+        request_payload,
+        response_payload,
+        status_payload,
+        config.api_key,
+    )
+
+    request_path, request_hash = save_json(
+        "generated",
+        f"{upload_id}_storecove_request_redacted.json",
+        redact_secrets(request_payload.model_dump(mode="json"), config.api_key),
+    )
+    response_path, response_hash = save_json(
+        "generated",
+        f"{upload_id}_storecove_response.json",
+        response_payload.model_dump(mode="json"),
+    )
+    status_path, status_hash = save_json(
+        "generated",
+        f"{upload_id}_storecove_status.json",
+        status_payload.model_dump(mode="json"),
+    )
+    provider_path, provider_hash = save_binary(
+        "generated",
+        f"{upload_id}_storecove_provider_reference.txt",
+        response_payload.provider_reference.encode("utf-8"),
+    )
+    readme_path, readme_hash = save_binary(
+        "generated",
+        f"{upload_id}_uk_sandbox_readme.txt",
+        _uk_sandbox_readme().encode("utf-8"),
+    )
+
+    _mark_generated_file(record, "storecove_request.json", relative_storage_path(request_path), request_hash)
+    _mark_generated_file(record, "storecove_response.json", relative_storage_path(response_path), response_hash)
+    _mark_generated_file(record, "storecove_status.json", relative_storage_path(status_path), status_hash)
+    _mark_generated_file(record, "provider_reference.txt", relative_storage_path(provider_path), provider_hash)
+    _mark_generated_file(record, "README_sandbox_only.txt", relative_storage_path(readme_path), readme_hash)
+
+    record.storecove_provider_reference = response_payload.provider_reference
+    record.storecove_submission_status = response_payload.status
+    record.storecove_mocked = response_payload.mocked
+    record.status = "storecove_sandbox_mocked"
+    record.generated_at = datetime.now(timezone.utc).isoformat()
+    record.evidence_bundle_preview.status = "uk_storecove_sandbox_mocked_milestone_5a"
+    return save_upload(record)
 
 
 @router.get("/{upload_id}/generated-xml")
@@ -359,3 +448,12 @@ def _generated_xml_filename(record: UploadRecord) -> str:
     if record.selected_country_pack == "saudi_zatca":
         return f"{record.upload_id}_saudi_zatca_offline_invoice.xml"
     return f"{record.upload_id}_belgium_peppol_invoice.xml"
+
+
+def _uk_sandbox_readme() -> str:
+    return (
+        f"{UK_SANDBOX_WORDING}\n\n"
+        "Milestone 5A does not perform live Storecove API calls. Mocked sandbox responses are test evidence only.\n"
+        "No production Peppol transmission, HMRC submission, statutory compliance proof or authority acceptance is included.\n"
+        "Storecove API keys and secrets must not appear in this evidence bundle.\n"
+    )

@@ -1,4 +1,12 @@
-import type { AuditEntry, CountryPack, CountryPackList, DecodedQrPayload, UploadRecord, ValidationReport } from "../types";
+import type {
+  AuditEntry,
+  CountryPack,
+  CountryPackList,
+  DecodedQrPayload,
+  StorecoveConfigurationStatus,
+  UploadRecord,
+  ValidationReport
+} from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -78,6 +86,16 @@ export async function validateUpload(uploadId: string): Promise<ValidationReport
 
 export async function generateOutput(uploadId: string): Promise<UploadRecord["evidence_bundle_preview"]> {
   return request<UploadRecord["evidence_bundle_preview"]>(`/api/uploads/${uploadId}/generate`, {
+    method: "POST"
+  });
+}
+
+export async function fetchStorecoveSandboxConfiguration(): Promise<StorecoveConfigurationStatus> {
+  return request<StorecoveConfigurationStatus>("/api/uploads/storecove-sandbox/configuration");
+}
+
+export async function sendToStorecoveSandbox(uploadId: string): Promise<UploadRecord> {
+  return request<UploadRecord>(`/api/uploads/${uploadId}/storecove-sandbox`, {
     method: "POST"
   });
 }

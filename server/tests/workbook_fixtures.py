@@ -219,6 +219,168 @@ def saudi_valid_workbook_bytes(**overrides: Any) -> bytes:
     return stream.getvalue()
 
 
+def uk_valid_workbook_bytes(**overrides: Any) -> bytes:
+    workbook = uk_valid_workbook(**overrides)
+    stream = BytesIO()
+    workbook.save(stream)
+    return stream.getvalue()
+
+
+def uk_valid_workbook(
+    *,
+    invoice_number: str | None = "INV-UK-2029-001",
+    tax_total: float = 200.00,
+    selected_output_profile: str = "storecove_peppol_sandbox_readiness_test",
+) -> Workbook:
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+
+    entities = workbook.create_sheet("entities")
+    entities.append(
+        [
+            "entity_id",
+            "legal_name",
+            "country_code",
+            "tax_registration_number",
+            "legal_registration_number",
+            "address_line_1",
+            "city",
+            "postal_code",
+            "country_name",
+            "email",
+            "peppol_id",
+            "peppol_scheme_id",
+        ]
+    )
+    entities.append(
+        [
+            "SELLER-UK-1",
+            "Demo UK Services Ltd",
+            "GB",
+            "GB123456789",
+            "12345678",
+            "1 Demo Street",
+            "London",
+            "EC1A 1AA",
+            "United Kingdom",
+            "billing@example.test",
+            "0088:123456789",
+            "0088",
+        ]
+    )
+
+    customers = workbook.create_sheet("customers")
+    customers.append(
+        [
+            "customer_id",
+            "legal_name",
+            "buyer_type",
+            "country_code",
+            "tax_registration_number",
+            "legal_registration_number",
+            "address_line_1",
+            "city",
+            "postal_code",
+            "country_name",
+            "email",
+            "peppol_id",
+            "peppol_scheme_id",
+        ]
+    )
+    customers.append(
+        [
+            "BUYER-UK-1",
+            "Demo UK Buyer Ltd",
+            "business",
+            "GB",
+            "GB987654321",
+            "87654321",
+            "2 Buyer Road",
+            "Manchester",
+            "M1 1AA",
+            "United Kingdom",
+            "ap@example.test",
+            "0088:987654321",
+            "0088",
+        ]
+    )
+
+    header = workbook.create_sheet("invoice_header")
+    header.append(
+        [
+            "invoice_id",
+            "invoice_number",
+            "invoice_date",
+            "due_date",
+            "entity_id",
+            "customer_id",
+            "invoice_type",
+            "invoice_type_code",
+            "supply_type",
+            "transaction_type",
+            "selected_country_pack",
+            "selected_output_profile",
+            "invoice_currency_code",
+            "tax_currency_code",
+            "net_total",
+            "tax_total",
+            "gross_total",
+            "buyer_reference",
+            "purchase_order_reference",
+            "payment_means_code",
+            "payment_id",
+            "notes",
+        ]
+    )
+    header.append(
+        [
+            "INV-UK-1",
+            invoice_number,
+            "2026-06-26",
+            "2026-07-26",
+            "SELLER-UK-1",
+            "BUYER-UK-1",
+            "standard_sales_invoice",
+            "380",
+            "services",
+            "domestic_b2b",
+            "uk_info",
+            selected_output_profile,
+            "GBP",
+            "GBP",
+            1000.00,
+            tax_total,
+            1200.00,
+            "UK-BUYER-REF-001",
+            "",
+            "30",
+            "INV-UK-2029-001",
+            "UK Peppol sandbox readiness sample.",
+        ]
+    )
+
+    lines = workbook.create_sheet("invoice_lines")
+    lines.append(
+        [
+            "invoice_id",
+            "line_number",
+            "description",
+            "item_name",
+            "quantity",
+            "unit_code",
+            "unit_price",
+            "line_net_amount",
+            "tax_category_code",
+            "tax_rate",
+            "tax_amount",
+            "line_gross_amount",
+        ]
+    )
+    lines.append(["INV-UK-1", 1, "Consulting services", "Consulting services", 10, "HUR", 100.00, 1000.00, "S", 20, 200.00, 1200.00])
+
+    return workbook
+
+
 def saudi_valid_workbook(
     *,
     invoice_number: str | None = "INV-SA-2026-001",

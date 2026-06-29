@@ -71,14 +71,15 @@ const packs: CountryPack[] = [
   },
   {
     country_pack_id: "uk_info",
-    display_name: "United Kingdom / Information Only",
+    display_name: "United Kingdom / 2029 Peppol Roadmap",
     country_code: "GB",
-    pack_version: "0.1.0",
-    support_level: "info_only",
-    v1_boundary: "Information-only placeholder.",
-    v1_boundary_warning: "Information only.",
-    output_profiles: [],
-    default_output_profile: null,
+    pack_version: "0.2.0",
+    support_level: "info_only_roadmap",
+    sandbox_test_available_when_configured: true,
+    v1_boundary: "UK Peppol sandbox test only.",
+    v1_boundary_warning: "UK Peppol sandbox test only.",
+    output_profiles: ["storecove_peppol_sandbox_readiness_test"],
+    default_output_profile: "storecove_peppol_sandbox_readiness_test",
     requires_pdf: false,
     requires_qr: false,
     requires_signature: false,
@@ -147,7 +148,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /Settings/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Help/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Saudi Arabia / ZATCA" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "United Kingdom / Information Only" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "United Kingdom / 2029 Peppol Roadmap" })).toBeInTheDocument();
     expect(container.querySelector("aside")).not.toBeInTheDocument();
     expect(container.querySelector(".chart")).not.toBeInTheDocument();
   });

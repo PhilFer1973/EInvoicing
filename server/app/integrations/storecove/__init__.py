@@ -1,0 +1,2 @@
+"""Storecove sandbox integration scaffold."""
+

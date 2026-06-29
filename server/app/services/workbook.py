@@ -175,6 +175,8 @@ def parse_workbook_upload(content: bytes, filename: str, pack: CountryPack) -> U
             results.extend(_basic_required_value_results(canonical_invoice, pack))
             if pack.country_pack_id == "belgium_peppol":
                 results.extend(_belgium_validation_results(canonical_invoice, records, pack))
+            if pack.country_pack_id == "uk_info":
+                results.extend(_uk_validation_results(canonical_invoice, pack))
             if pack.country_pack_id == "saudi_zatca":
                 _apply_saudi_metadata(canonical_invoice)
                 results.extend(_saudi_validation_results(canonical_invoice, pack))
@@ -717,6 +719,88 @@ def _saudi_vat_reconciliation_results(canonical: CanonicalInvoice, pack: Country
     return results
 
 
+def _uk_validation_results(canonical: CanonicalInvoice, pack: CountryPack) -> list[ValidationResult]:
+    results: list[ValidationResult] = []
+
+    if _is_blank(canonical.buyer.get("tax_registration_number")):
+        results.append(
+            _blocking_result(
+                "UK-BUYER-001",
+                "country_preflight",
+                "buyer.tax_registration_number",
+                "Buyer VAT number is required for the UK Peppol sandbox readiness sample.",
+                pack,
+                "Add tax_registration_number on the customers sheet.",
+            )
+        )
+
+    results.extend(_uk_vat_reconciliation_results(canonical, pack))
+
+    if not any(result.severity == "error" and result.status == "failed" for result in results):
+        results.append(
+            ValidationResult(
+                rule_id="UK-SANDBOX-000",
+                layer="country_preflight",
+                severity="info",
+                status="passed",
+                message=(
+                    "UK Peppol sandbox readiness validation passed. This does not prove final UK 2029 "
+                    "statutory compliance."
+                ),
+                field_path="invoice.selected_country_pack",
+                country_pack_id=pack.country_pack_id,
+                country_pack_version=pack.pack_version,
+            )
+        )
+
+    return results
+
+
+def _uk_vat_reconciliation_results(canonical: CanonicalInvoice, pack: CountryPack) -> list[ValidationResult]:
+    line_net_total = sum(_decimal(line.get("line_net_amount")) for line in canonical.lines)
+    line_tax_total = sum(_decimal(line.get("tax_amount")) for line in canonical.lines)
+    header_net = _decimal(canonical.invoice.get("net_total"))
+    header_tax = _decimal(canonical.invoice.get("tax_total"))
+    header_gross = _decimal(canonical.invoice.get("gross_total"))
+    results: list[ValidationResult] = []
+
+    if not _money_equal(line_net_total, header_net):
+        results.append(
+            _blocking_result(
+                "UK-ARITH-001",
+                "arithmetic",
+                "invoice.net_total",
+                "UK invoice net total does not match the sum of line net amounts.",
+                pack,
+                "Correct net_total or line_net_amount values in the workbook.",
+            )
+        )
+    if not _money_equal(line_tax_total, header_tax):
+        results.append(
+            _blocking_result(
+                "UK-ARITH-002",
+                "arithmetic",
+                "invoice.tax_total",
+                "UK invoice VAT total does not match the sum of line VAT amounts.",
+                pack,
+                "Correct tax_total or line tax_amount values in the workbook.",
+            )
+        )
+    if not _money_equal(header_net + header_tax, header_gross):
+        results.append(
+            _blocking_result(
+                "UK-ARITH-003",
+                "arithmetic",
+                "invoice.gross_total",
+                "UK invoice gross total must equal net total plus VAT total.",
+                pack,
+                "Correct gross_total, net_total or tax_total in the invoice_header sheet.",
+            )
+        )
+
+    return results
+
+
 def _blocking_result(
     rule_id: str,
     layer: str,
@@ -859,6 +943,8 @@ def _pack_id_for_profile(profile_id: str) -> str | None:
         return "belgium_peppol"
     if profile_id.startswith("zatca_"):
         return "saudi_zatca"
+    if profile_id.startswith("storecove_") or profile_id.startswith("uk_"):
+        return "uk_info"
     return None
 
 

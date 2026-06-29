@@ -42,7 +42,7 @@ class CountryAdapter:
             EvidenceFile(filename="country_pack_manifest.json", status="preview_available"),
             EvidenceFile(filename="hashes.txt", status="pending_generation"),
         ]
-        if self.pack.support_level != "info_only":
+        if self.pack.country_pack_id in {"belgium_peppol", "saudi_zatca"}:
             files.insert(0, EvidenceFile(filename="invoice.xml", status="pending_generation"))
         if self.pack.requires_pdf:
             files.insert(1, EvidenceFile(filename="saudi_visual_invoice.pdf", status="pending_generation"))
@@ -50,6 +50,16 @@ class CountryAdapter:
             files.insert(2, EvidenceFile(filename="qr.png", status="pending_generation"))
             files.insert(3, EvidenceFile(filename="qr_payload_base64.txt", status="pending_generation"))
             files.insert(4, EvidenceFile(filename="qr_payload_decoded.json", status="pending_generation"))
+        if self.pack.country_pack_id == "uk_info":
+            files.extend(
+                [
+                    EvidenceFile(filename="storecove_request.json", status="pending_sandbox_test"),
+                    EvidenceFile(filename="storecove_response.json", status="pending_sandbox_test"),
+                    EvidenceFile(filename="storecove_status.json", status="pending_sandbox_test"),
+                    EvidenceFile(filename="provider_reference.txt", status="pending_sandbox_test"),
+                    EvidenceFile(filename="README_sandbox_only.txt", status="preview_available"),
+                ]
+            )
 
         return EvidenceBundlePreview(
             generation_id="GEN-PREVIEW",

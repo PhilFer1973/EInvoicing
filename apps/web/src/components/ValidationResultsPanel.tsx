@@ -18,10 +18,6 @@ export function ValidationResultsPanel({ uploadRecord }: ValidationResultsPanelP
       <ResultGroup title="Warnings requiring acknowledgement" results={ackWarnings} emptyText="No acknowledgement warnings recorded." />
       <ResultGroup title="Non-blocking warnings" results={warnings} emptyText="No non-blocking warnings recorded." />
       <details className="technical-status">
-        <summary>Technical validation status</summary>
-        <p>Official artefact validation: {uploadRecord?.validation_report.summary.official_artefact_validation ?? "not_configured"}</p>
-      </details>
-      <details className="technical-status">
         <summary>Passed checks</summary>
         <ResultList results={passed} emptyText="Passed checks will appear after upload." />
       </details>

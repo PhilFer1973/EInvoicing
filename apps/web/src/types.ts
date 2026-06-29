@@ -6,6 +6,7 @@ export interface CountryPack {
   country_code: string;
   pack_version: string;
   support_level: string;
+  sandbox_test_available_when_configured?: boolean;
   v1_boundary: string;
   v1_boundary_warning: string;
   output_profiles: string[];
@@ -129,11 +130,23 @@ export interface UploadRecord {
   generated_xml_path: string | null;
   generated_xml_sha256_hash: string | null;
   generated_at?: string | null;
+  storecove_provider_reference?: string | null;
+  storecove_submission_status?: string | null;
+  storecove_mocked?: boolean;
   acknowledged_warning_rule_ids?: string[];
   warning_acknowledged_at?: string | null;
   canonical_invoice: CanonicalInvoice | null;
   validation_report: ValidationReport;
   evidence_bundle_preview: EvidenceBundlePreview;
+}
+
+export interface StorecoveConfigurationStatus {
+  sandbox_enabled: boolean;
+  configured: boolean;
+  api_base_url: string | null;
+  missing_fields: string[];
+  mode: "disabled" | "missing_credentials" | "configuration_error" | "mocked_sandbox" | string;
+  message: string;
 }
 
 export interface AuditEntry {

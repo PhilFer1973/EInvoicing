@@ -16,6 +16,7 @@ class CountryPack(BaseModel):
     country_code: str
     pack_version: str
     support_level: str
+    sandbox_test_available_when_configured: bool = False
     v1_boundary: str
     v1_boundary_warning: str = ""
     output_profiles: list[str] = Field(default_factory=list)

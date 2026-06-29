@@ -8,6 +8,12 @@ from app.models.country_pack import CountryPack
 from app.models.upload import UploadRecord
 
 
+UK_SANDBOX_WORDING = (
+    "UK Peppol sandbox test only. This tests Peppol-style invoice readiness through a sandbox provider. "
+    "It does not prove final UK 2029 statutory compliance."
+)
+
+
 def official_validation_note(country_pack_id: str) -> str:
     """Return a deliberately conservative official validation statement."""
     if country_pack_id == "belgium_peppol":
@@ -20,6 +26,12 @@ def official_validation_note(country_pack_id: str) -> str:
         return (
             "Official artefact validation not configured. Generated only: no ZATCA SDK "
             "validation, submission, clearance, reporting or production signing has occurred."
+        )
+    if country_pack_id == "uk_info":
+        return (
+            "Official artefact validation not configured. UK Peppol sandbox test only: no final UK 2029 "
+            "statutory compliance validation, Peppol production transmission, HMRC submission or live "
+            "acceptance has occurred."
         )
     return "Official artefact validation not configured. Generated only."
 
@@ -47,7 +59,7 @@ def build_evidence_metadata(record: UploadRecord, country_pack: CountryPack) -> 
         if evidence_file.status == "stored"
         and evidence_file.filename
         not in {
-            "source_workbook.xlsx",
+            "source_upload_snapshot.xlsx",
             "canonical_invoice.json",
             "validation_report.json",
             "country_pack_manifest.json",
@@ -85,5 +97,16 @@ def build_evidence_metadata(record: UploadRecord, country_pack: CountryPack) -> 
             "status": report.summary.official_artefact_validation,
             "note": official_validation_note(record.selected_country_pack),
         },
+        "storecove_sandbox": (
+            {
+                "sandbox_only": True,
+                "mocked": record.storecove_mocked,
+                "provider_reference": record.storecove_provider_reference,
+                "status": record.storecove_submission_status,
+                "disclaimer": UK_SANDBOX_WORDING,
+            }
+            if record.selected_country_pack == "uk_info"
+            else None
+        ),
         "v1_boundary": country_pack.v1_boundary,
     }
