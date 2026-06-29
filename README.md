@@ -1,96 +1,93 @@
 # E-Invoicing Workbench
 
-Local V1 e-invoicing file generation and validation workbench.
+Local V1 e-invoicing file generation and validation workbench. It accepts a structured Excel workbook, builds canonical invoice JSON, applies country-pack validation, and creates offline evidence bundles.
 
-This repository contains the build pack plus the Milestone 1 implementation:
+## V1 Boundary
 
-- React + TypeScript + Vite frontend app shell.
-- FastAPI backend skeleton.
-- Country pack JSON loading for Belgium, Saudi Arabia and UK info-only.
-- Workbook upload and parsing scaffold.
-- Canonical invoice JSON construction scaffold.
-- Validation result model and summary.
-- Error/warning drawer.
-- Evidence bundle preview skeleton.
-- Audit Trail placeholder.
+This application is not an ERP, tax engine, Peppol access point, or live tax-authority submission tool.
 
-Milestone 1 does not generate Belgium XML, Saudi XML, Saudi PDF, QR codes, ZIP exports, Peppol transmission, ZATCA/FATOORA submission, production signing or authority clearance.
-
-## Product Boundary
-
-E-Invoicing Workbench is not an ERP, not a tax engine and not a live tax authority submission tool.
-
-Compliance status in the app must remain honest:
-
-> Generated and validated against the published schemas, validation artefacts, and configured country rules available in this application. Not submitted to tax authorities and not a substitute for professional compliance review.
-
-Official artefact validation is shown as `not_configured` until a real validator artefact is wired and run.
+- Belgium: generates a Peppol-style UBL XML file only. It does not transmit through Peppol.
+- Saudi Arabia: generates offline/demo ZATCA-style XML, a tags 1-5 QR image, and a visual bilingual PDF. It does not submit, clear, report, apply authority stamps, onboard a CSID, or create a production cryptographic signature.
+- Official artefact validation is `not_configured` unless a real validator has been configured and run. The app does not claim UBL XSD, EN 16931, Peppol Schematron, or ZATCA SDK validation.
 
 ## Project Structure
 
 ```text
-apps/web/              React + TypeScript + Vite frontend
+apps/web/              React, TypeScript, and Vite frontend
 server/                FastAPI backend
 country_packs/         Runtime country pack manifests
-country_pack_stubs/    Original build-pack stubs
-docs/                  V1 build pack
-prompts/               Codex milestone prompts
+test_data/workbooks/   Demo workbooks
+docs/                  Product and build-pack documentation
 ```
 
-## Backend Setup
+## Local Run
+
+Install the backend environment once:
 
 ```powershell
 cd C:\Users\Philip\Downloads\EInvoicing\server
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e .[dev]
-python -m playwright install chromium
-python -m uvicorn app.main:app --reload --port 8000
+.\.venv\Scripts\python -m pip install -e .[dev]
+.\.venv\Scripts\python -m playwright install chromium
 ```
 
-`python -m playwright install chromium` is required once on each development machine for the Saudi Arabic/bilingual visual PDF renderer. It runs locally and does not connect to ZATCA/FATOORA.
+`playwright install chromium` is needed once for the deterministic Saudi visual-PDF renderer. It does not connect to ZATCA/FATOORA.
 
-Health check:
+Start the backend:
 
 ```powershell
-Invoke-RestMethod http://localhost:8000/health
+cd C:\Users\Philip\Downloads\EInvoicing\server
+.\.venv\Scripts\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Expected response:
+Install frontend packages once and start Vite in a second terminal:
 
-```json
-{"status":"ok"}
+```powershell
+cd C:\Users\Philip\Downloads\EInvoicing\apps\web
+npm install
+npm run dev -- --port 5173
 ```
+
+Open `http://127.0.0.1:5173`. The frontend uses `http://localhost:8000` by default. Set `VITE_API_BASE_URL` in `apps/web/.env.local` only when the API is hosted elsewhere.
+
+## Demo Workbooks
+
+- Belgium: `C:\Users\Philip\Downloads\EInvoicing\test_data\workbooks\BE-VALID-001.xlsx`
+- Saudi Arabia: `C:\Users\Philip\Downloads\EInvoicing\test_data\workbooks\SA-VALID-001.xlsx`
+
+The **Export Template** button downloads a four-sheet starter workbook: `entities`, `customers`, `invoice_header`, and `invoice_lines`. It includes a valid Belgium domestic B2B sample row and optional Saudi-oriented columns such as `invoice_time` and `description_ar`.
+
+## Belgium Demo
+
+1. Select `Belgium / Peppol BIS Billing 3.0`.
+2. Upload `BE-VALID-001.xlsx`.
+3. Select **Validate**, then **Generate**.
+4. The generated-output view provides the XML; select **Export ZIP** for the evidence bundle.
+
+The bundle contains the workbook snapshot, canonical invoice, validation report, Belgium XML, country-pack manifest, evidence metadata, and hashes.
+
+## Saudi Demo
+
+1. Select `Saudi Arabia / ZATCA`.
+2. Upload `SA-VALID-001.xlsx`.
+3. Select **Validate**, then **Generate**.
+4. The generated-output view provides the Saudi XML, QR image, decoded QR payload, and Arabic/bilingual visual PDF.
+5. Acknowledge the displayed Saudi V1 boundary before selecting **Export ZIP**.
+
+The Saudi QR encodes Base64 TLV tags 1-5 only: seller name, VAT/TIN, timestamp, total including VAT, and VAT total. Normal phone scanners may display the Base64/TLV value; use the decoded QR payload view to inspect the invoice fields.
+
+The Saudi bundle contains the workbook snapshot, canonical invoice, validation report, XML, `qr_payload_base64.txt`, `qr_payload_decoded.json`, `qr.png`, `saudi_visual_invoice.pdf`, country-pack manifest, evidence metadata, and hashes.
+
+## Checks
 
 Backend tests:
 
 ```powershell
 cd C:\Users\Philip\Downloads\EInvoicing\server
-.\.venv\Scripts\Activate.ps1
-pytest
+.\.venv\Scripts\python -m pytest
 ```
 
-## Frontend Setup
-
-```powershell
-cd C:\Users\Philip\Downloads\EInvoicing\apps\web
-npm install
-npm run dev
-```
-
-The frontend defaults to:
-
-```text
-http://127.0.0.1:5173
-```
-
-The API base URL defaults to `http://localhost:8000`. To override it, create `apps/web/.env.local`:
-
-```text
-VITE_API_BASE_URL=http://localhost:8000
-```
-
-Frontend checks:
+Frontend tests and production build:
 
 ```powershell
 cd C:\Users\Philip\Downloads\EInvoicing\apps\web
@@ -98,40 +95,6 @@ npm test
 npm run build
 ```
 
-## Saudi QR And Visual PDF Check
-
-1. Start the backend and frontend using the commands above.
-2. Open `http://127.0.0.1:5173`.
-3. Select `Saudi Arabia / ZATCA`.
-4. Upload `test_data/workbooks/SA-VALID-001.xlsx`.
-5. Select `Generate` after validation completes, then use the generated-output dialog to open or download the XML, Phase-1-style QR image and Arabic/bilingual visual PDF. The same dialog shows the decoded QR fields and offers `Decoded JSON`.
-6. Select `Export ZIP` to download the evidence bundle containing all generated artifacts.
-
-The Saudi QR contains Base64-encoded TLV invoice-data tags 1-5 only, so a normal phone scanner may display encoded text rather than a sentence. The visual PDF is not PDF/A-3 and neither artifact is submitted, cleared or production-signed.
-
-## Milestone 1 Acceptance Checks
-
-- Backend `GET /health` returns OK.
-- UI uses top navigation only: E-Invoicing, Audit Trail, Settings, Help.
-- Desktop workbench uses the specified three-column layout.
-- No sidebar, dashboard charts, KPI cards, analytics panels or chat interface.
-- Country selector displays Belgium / Peppol, Saudi Arabia / ZATCA and UK info-only.
-- Saudi boundary warning states that there is no FATOORA submission, no clearance stamp and no cleared Saudi tax invoice.
-- Workbook upload flows through canonical invoice JSON before validation or output placeholders.
-- Country outputs remain adapter-shaped placeholders until later milestones.
-- Evidence bundle is a skeleton preview only in Milestone 1.
-
 ## Build Pack
 
-Read the documents in `docs/` before changing milestone scope. The key files are:
-
-1. `docs/01_product_scope.md`
-2. `docs/02_app_architecture.md`
-3. `docs/03_data_model_and_excel_template.md`
-4. `docs/04_validation_engine.md`
-5. `docs/05_country_pack_standard.md`
-6. `docs/08_output_bundle_and_audit_trail_spec.md`
-7. `docs/09_ui_design_spec.md`
-8. `docs/11_milestones_and_acceptance_tests.md`
-
-Do not proceed to Milestone 2 or later until Milestone 1 is accepted.
+The implementation follows the documents in `docs/`. The key references are `01_product_scope.md`, `02_app_architecture.md`, `03_data_model_and_excel_template.md`, `04_validation_engine.md`, `05_country_pack_standard.md`, `08_output_bundle_and_audit_trail_spec.md`, `09_ui_design_spec.md`, and `11_milestones_and_acceptance_tests.md`.

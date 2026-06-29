@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from zipfile import ZipFile
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -44,6 +45,38 @@ async def test_template_download_contains_required_sheets(client: AsyncClient) -
     assert response.status_code == 200
     workbook = load_workbook(BytesIO(response.content), read_only=True)
     assert {"entities", "customers", "invoice_header", "invoice_lines"} <= set(workbook.sheetnames)
+    header = [cell.value for cell in workbook["invoice_header"][1]]
+    sample = [cell.value for cell in workbook["invoice_header"][2]]
+    assert "invoice_time" in header
+    assert sample[header.index("selected_country_pack")] == "belgium_peppol"
+    assert workbook["invoice_lines"].max_row == 2
+
+
+async def test_exported_template_supports_belgium_demo_flow(client: AsyncClient) -> None:
+    template_response = await client.get("/api/templates/workbook")
+    assert template_response.status_code == 200
+
+    upload_response = await client.post(
+        "/api/uploads",
+        data={"selected_country_pack": "belgium_peppol"},
+        files={
+            "file": (
+                "e-invoicing-v1-template.xlsx",
+                template_response.content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert upload_response.status_code == 200
+    payload = upload_response.json()
+    assert payload["validation_report"]["summary"]["overall_status"] == "passed"
+
+    generation_response = await client.post(f"/api/uploads/{payload['upload_id']}/generate")
+    assert generation_response.status_code == 200
+    bundle_response = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
+    assert bundle_response.status_code == 200
+    with ZipFile(BytesIO(bundle_response.content)) as archive:
+        assert "invoice.xml" in archive.namelist()
 
 
 async def test_upload_valid_workbook_builds_canonical_json(client: AsyncClient) -> None:

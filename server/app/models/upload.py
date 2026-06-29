@@ -35,6 +35,9 @@ class UploadRecord(BaseModel):
     validation_report_path: str | None = None
     generated_xml_path: str | None = None
     generated_xml_sha256_hash: str | None = None
+    generated_at: str | None = None
+    acknowledged_warning_rule_ids: list[str] = Field(default_factory=list)
+    warning_acknowledged_at: str | None = None
     canonical_invoice: CanonicalInvoice | None = None
     validation_report: ValidationReport
     evidence_bundle_preview: EvidenceBundlePreview

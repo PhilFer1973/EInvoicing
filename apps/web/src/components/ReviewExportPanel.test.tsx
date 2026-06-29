@@ -23,6 +23,37 @@ describe("ReviewExportPanel", () => {
     expect(screen.getByRole("button", { name: "Generate" })).toBeEnabled();
   });
 
+  it("requires Saudi V1 boundary acknowledgement before evidence export", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ...validSaudiUpload,
+          acknowledged_warning_rule_ids: ["SA-BOUNDARY-001"],
+          warning_acknowledged_at: "2026-06-26T17:00:00+00:00"
+        }),
+        { status: 200 }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    function StatefulPanel() {
+      const [record, setRecord] = useState(validSaudiUpload);
+      return <ReviewExportPanel pack={saudiPack} uploadRecord={record} onUploadRecordChange={setRecord} />;
+    }
+
+    render(<StatefulPanel />);
+    expect(screen.getByRole("button", { name: "Export ZIP" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    await waitFor(() => expect(screen.getByRole("link", { name: "Export ZIP" })).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/uploads/UP-SA-VALID/acknowledge-boundaries",
+      { method: "POST" }
+    );
+    vi.unstubAllGlobals();
+  });
+
   it("shows the decoded QR fields after Saudi output generation", async () => {
     const generatedEvidence = {
       ...validSaudiUpload.evidence_bundle_preview,
@@ -32,7 +63,7 @@ describe("ReviewExportPanel", () => {
         { filename: "qr.png", status: "stored", sha256: "qr-hash", storage_path: "generated/qr.png" },
         { filename: "qr_payload_base64.txt", status: "stored", sha256: "payload-hash", storage_path: "generated/qr.txt" },
         { filename: "qr_payload_decoded.json", status: "stored", sha256: "decoded-hash", storage_path: "generated/qr.json" },
-        { filename: "invoice_arabic_bilingual_visual.pdf", status: "stored", sha256: "pdf-hash", storage_path: "generated/invoice.pdf" }
+        { filename: "saudi_visual_invoice.pdf", status: "stored", sha256: "pdf-hash", storage_path: "generated/invoice.pdf" }
       ]
     };
     const fetchMock = vi

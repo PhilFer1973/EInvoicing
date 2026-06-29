@@ -66,7 +66,7 @@ async def test_saudi_generation_makes_qr_png_and_visual_pdf_available(client: As
         "qr_payload_base64.txt",
         "qr_payload_decoded.json",
         "qr.png",
-        "invoice_arabic_bilingual_visual.pdf",
+        "saudi_visual_invoice.pdf",
     ):
         assert files[filename]["status"] == "stored"
         assert files[filename]["sha256"]
@@ -118,6 +118,8 @@ async def test_saudi_visual_pdf_falls_back_to_english_line_description(client: A
 async def test_saudi_evidence_bundle_contains_all_milestone_3c_outputs(client: AsyncClient) -> None:
     payload = await _upload_saudi_workbook(client)
     await _generate_saudi_outputs(client, payload["upload_id"])
+    acknowledgement = await client.post(f"/api/uploads/{payload['upload_id']}/acknowledge-boundaries")
+    assert acknowledgement.status_code == 200
 
     response = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
 
@@ -133,7 +135,7 @@ async def test_saudi_evidence_bundle_contains_all_milestone_3c_outputs(client: A
             "qr_payload_base64.txt",
             "qr_payload_decoded.json",
             "qr.png",
-            "invoice_arabic_bilingual_visual.pdf",
+            "saudi_visual_invoice.pdf",
             "hashes.txt",
         } <= names
         assert archive.read("qr.png").startswith(b"\x89PNG\r\n\x1a\n")
@@ -147,7 +149,34 @@ async def test_saudi_evidence_bundle_contains_all_milestone_3c_outputs(client: A
             {"tag": 4, "label": "Invoice total including VAT", "field": "invoice_total_including_vat", "value": "11500.00"},
             {"tag": 5, "label": "VAT total", "field": "vat_total", "value": "1500.00"},
         ]
-        assert archive.read("invoice_arabic_bilingual_visual.pdf").startswith(b"%PDF-")
+        assert archive.read("saudi_visual_invoice.pdf").startswith(b"%PDF-")
+        evidence = json.loads(archive.read("evidence.json"))
+        assert evidence["generated_at"]
+        assert evidence["validation"]["internal_validation"] == "passed"
+        assert evidence["warning_acknowledgement"]["acknowledged"] is True
+        assert evidence["official_artefact_validation"]["status"] == "not_configured"
+        assert "no ZATCA SDK validation" in evidence["official_artefact_validation"]["note"]
+        assert {output["filename"] for output in evidence["generated_outputs"]} >= {
+            "invoice.xml",
+            "qr_payload_base64.txt",
+            "qr_payload_decoded.json",
+            "qr.png",
+            "saudi_visual_invoice.pdf",
+        }
+
+
+async def test_saudi_generated_bundle_requires_boundary_acknowledgement(client: AsyncClient) -> None:
+    payload = await _upload_saudi_workbook(client)
+    await _generate_saudi_outputs(client, payload["upload_id"])
+
+    blocked = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
+    assert blocked.status_code == 409
+    assert "Acknowledge the V1 boundary warnings" in blocked.text
+
+    acknowledged = await client.post(f"/api/uploads/{payload['upload_id']}/acknowledge-boundaries")
+    assert acknowledged.status_code == 200
+    assert acknowledged.json()["acknowledged_warning_rule_ids"]
+    assert acknowledged.json()["warning_acknowledged_at"]
 
 
 async def test_saudi_generation_remains_blocked_by_validation_errors(client: AsyncClient) -> None:

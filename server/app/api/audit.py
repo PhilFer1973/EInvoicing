@@ -27,15 +27,18 @@ def list_audit_entries() -> list[AuditEntry]:
         canonical = upload.canonical_invoice
         entries.append(
             AuditEntry(
-                generated_at="not_generated_milestone_1",
+                generated_at=upload.generated_at or "Not generated",
                 invoice_number=canonical.invoice.get("invoice_number") if canonical else None,
                 country_pack=upload.selected_country_pack,
                 output_profile=upload.selected_output_profile,
                 status=upload.status,
                 warnings=upload.validation_report.summary.warnings + upload.validation_report.summary.warnings_ack_required,
                 pack_version=upload.evidence_bundle_preview.country_pack_version,
-                download_zip=None,
+                download_zip=(
+                    f"/api/uploads/{upload.upload_id}/evidence-bundle/download"
+                    if upload.status == "generated"
+                    else None
+                ),
             )
         )
     return entries
-

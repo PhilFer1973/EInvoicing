@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import json
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
@@ -202,6 +203,14 @@ async def test_evidence_zip_includes_generated_belgium_xml_after_generation(clie
         assert "invoice.xml" in names
         xml = archive.read("invoice.xml").decode("utf-8")
         assert "INV-BE-2026-001" in xml
+        evidence = json.loads(archive.read("evidence.json"))
+        assert evidence["selected_country_pack"] == "belgium_peppol"
+        assert evidence["country_pack_version"]
+        assert evidence["source_workbook"]["filename"] == "BE-VALID-001.xlsx"
+        assert evidence["validation"]["internal_validation"] == "passed"
+        assert evidence["official_artefact_validation"]["status"] == "not_configured"
+        assert "Peppol Schematron validation has run" in evidence["official_artefact_validation"]["note"]
+        assert any(output["filename"] == "invoice.xml" for output in evidence["generated_outputs"])
 
 
 async def test_generation_is_blocked_when_validation_has_blocking_errors(client: AsyncClient) -> None:

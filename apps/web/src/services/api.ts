@@ -82,6 +82,12 @@ export async function generateOutput(uploadId: string): Promise<UploadRecord["ev
   });
 }
 
+export async function acknowledgeBoundaryWarnings(uploadId: string): Promise<UploadRecord> {
+  return request<UploadRecord>(`/api/uploads/${uploadId}/acknowledge-boundaries`, {
+    method: "POST"
+  });
+}
+
 export async function fetchGeneratedQrPayloadDecoded(uploadId: string): Promise<DecodedQrPayload> {
   return request<DecodedQrPayload>(`/api/uploads/${uploadId}/generated-qr-payload-decoded`);
 }

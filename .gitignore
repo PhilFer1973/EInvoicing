@@ -1,8 +1,10 @@
 apps/web/node_modules/
 apps/web/dist/
+apps/web/*.log
 server/.venv/
 server/storage/
 server/*.db
+server/*.log
 server/*.egg-info/
 server/.pytest_cache/
 server/**/__pycache__/

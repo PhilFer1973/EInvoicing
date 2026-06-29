@@ -128,6 +128,9 @@ export interface UploadRecord {
   validation_report_path: string | null;
   generated_xml_path: string | null;
   generated_xml_sha256_hash: string | null;
+  generated_at?: string | null;
+  acknowledged_warning_rule_ids?: string[];
+  warning_acknowledged_at?: string | null;
   canonical_invoice: CanonicalInvoice | null;
   validation_report: ValidationReport;
   evidence_bundle_preview: EvidenceBundlePreview;

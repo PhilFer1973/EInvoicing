@@ -45,7 +45,7 @@ class CountryAdapter:
         if self.pack.support_level != "info_only":
             files.insert(0, EvidenceFile(filename="invoice.xml", status="pending_generation"))
         if self.pack.requires_pdf:
-            files.insert(1, EvidenceFile(filename="invoice_arabic_bilingual_visual.pdf", status="pending_generation"))
+            files.insert(1, EvidenceFile(filename="saudi_visual_invoice.pdf", status="pending_generation"))
         if self.pack.requires_qr:
             files.insert(2, EvidenceFile(filename="qr.png", status="pending_generation"))
             files.insert(3, EvidenceFile(filename="qr_payload_base64.txt", status="pending_generation"))

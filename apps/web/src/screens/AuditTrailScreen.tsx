@@ -13,7 +13,7 @@ export function AuditTrailScreen() {
       .then((payload) => {
         if (!isMounted) return;
         setEntries(payload);
-        setStatus(payload.length ? "Loaded" : "No generation records in Milestone 1");
+        setStatus(payload.length ? "Loaded" : "No evidence records yet");
       })
       .catch((error: unknown) => {
         if (!isMounted) return;
@@ -70,4 +70,3 @@ export function AuditTrailScreen() {
     </main>
   );
 }
-

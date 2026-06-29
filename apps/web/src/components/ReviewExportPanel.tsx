@@ -2,6 +2,7 @@ import { Archive, Code2, Download, ExternalLink, FileText, ListChecks, Sparkles,
 import { useEffect, useState } from "react";
 
 import {
+  acknowledgeBoundaryWarnings,
   canonicalInvoiceDownloadUrl,
   canonicalInvoiceUrl,
   evidenceBundleDownloadUrl,
@@ -40,11 +41,17 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(uploadRecord?.validation_report ?? null);
   const [isValidating, setIsValidating] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isAcknowledging, setIsAcknowledging] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [generationError, setGenerationError] = useState("");
   const isSaudiPack = pack?.country_pack_id === "saudi_zatca";
+  const acknowledgementRequired = isSaudiPack && (validationReport?.summary.warnings_ack_required ?? 0) > 0;
+  const acknowledgementComplete = Boolean(uploadRecord?.acknowledged_warning_rule_ids?.length);
   const generationSupported = pack?.country_pack_id === "belgium_peppol" || isSaudiPack;
-  const canExportZip = Boolean(uploadRecord?.evidence_bundle_preview.files.length) && !hasRegimeMismatch;
+  const canExportZip =
+    Boolean(uploadRecord?.evidence_bundle_preview.files.length) &&
+    !hasRegimeMismatch &&
+    (!acknowledgementRequired || acknowledgementComplete);
   const canGenerate =
     generationSupported &&
     Boolean(uploadRecord?.canonical_invoice) &&
@@ -109,6 +116,20 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
     }
   }
 
+  async function handleAcknowledge() {
+    if (!uploadRecord || acknowledgementComplete) return;
+    setIsAcknowledging(true);
+    setGenerationError("");
+    try {
+      const record = await acknowledgeBoundaryWarnings(uploadRecord.upload_id);
+      onUploadRecordChange?.(record);
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : "Could not acknowledge the Saudi V1 boundary");
+    } finally {
+      setIsAcknowledging(false);
+    }
+  }
+
   function handleExport() {
     setIsExporting(true);
   }
@@ -163,6 +184,23 @@ export function ReviewExportPanel({ pack, uploadRecord, onUploadRecordChange }: 
           {isGenerating ? "Generating" : "Generate"}
         </button>
         {generationError ? <p className="action-error">{generationError}</p> : null}
+        {acknowledgementRequired ? (
+          <label className="acknowledgement v1-boundary-acknowledgement">
+            <input
+              checked={acknowledgementComplete}
+              disabled={acknowledgementComplete || isAcknowledging}
+              onChange={(event) => {
+                if (event.target.checked) void handleAcknowledge();
+              }}
+              type="checkbox"
+            />
+            <span>
+              {acknowledgementComplete
+                ? "Saudi V1 boundary acknowledged."
+                : "Acknowledge: generated only, not submitted, cleared or production-signed."}
+            </span>
+          </label>
+        ) : null}
         {uploadRecord && canExportZip ? (
           <a
             aria-busy={isExporting}
@@ -236,7 +274,7 @@ function DetailModal({
 
 function GeneratedOutputDetails({ uploadRecord }: { uploadRecord: UploadRecord | null }) {
   const hasQr = Boolean(uploadRecord && hasStoredEvidenceFile(uploadRecord, "qr.png"));
-  const hasPdf = Boolean(uploadRecord && hasStoredEvidenceFile(uploadRecord, "invoice_arabic_bilingual_visual.pdf"));
+  const hasPdf = Boolean(uploadRecord && hasStoredEvidenceFile(uploadRecord, "saudi_visual_invoice.pdf"));
   const [decodedQrPayload, setDecodedQrPayload] = useState<DecodedQrPayload | null>(null);
   const [decodedQrError, setDecodedQrError] = useState("");
 
@@ -277,7 +315,7 @@ function GeneratedOutputDetails({ uploadRecord }: { uploadRecord: UploadRecord |
           <FileText aria-hidden="true" size={19} />
           <div>
             <strong>Invoice XML</strong>
-            <span>Offline generated output</span>
+            <span>Generated only; official artefact validation not configured</span>
           </div>
           <div className="output-artefact-links">
             <a aria-label="Open invoice XML" className="output-artefact-action" href={generatedXmlUrl(uploadRecord.upload_id)} rel="noreferrer" target="_blank" title="Open invoice XML">
@@ -370,6 +408,12 @@ function ValidationDetails({ report, uploadRecord }: { report: ValidationReport 
           <a href={canonicalInvoiceDownloadUrl(uploadRecord.upload_id)}>Download canonical JSON</a>
         </div>
       ) : null}
+      <p className="official-validation-note">
+        <strong>Official artefact validation:</strong>{" "}
+        {uploadRecord?.selected_country_pack === "saudi_zatca"
+          ? "Not configured. Generated only; not submitted, cleared or production-signed."
+          : "Not configured. Generated only; no XSD, EN 16931 or Peppol Schematron artefact has run."}
+      </p>
       <div className="validation-result-list">
         {report.results.map((result, index) => (
           <article className={`validation-result-item ${result.severity}`} key={`${result.rule_id}-${index}`}>

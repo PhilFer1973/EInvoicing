@@ -150,7 +150,7 @@ async def test_saudi_evidence_bundle_skeleton_contains_core_artefacts(client: As
     assert files["validation_report.json"]["status"] == "stored"
     assert files["country_pack_manifest.json"]["status"] == "preview_available"
     assert files["invoice.xml"]["status"] == "pending_generation"
-    assert files["invoice_arabic_bilingual_visual.pdf"]["status"] == "pending_generation"
+    assert files["saudi_visual_invoice.pdf"]["status"] == "pending_generation"
     assert files["qr.png"]["status"] == "pending_generation"
     assert files["qr_payload_base64.txt"]["status"] == "pending_generation"
     assert files["qr_payload_decoded.json"]["status"] == "pending_generation"
@@ -165,7 +165,7 @@ async def test_saudi_evidence_bundle_skeleton_contains_core_artefacts(client: As
         assert "country_pack_manifest.json" in names
         assert "invoice.xml" not in names
         assert "qr.png" not in names
-        assert "invoice_arabic_bilingual_visual.pdf" not in names
+        assert "saudi_visual_invoice.pdf" not in names
 
 
 async def test_valid_saudi_sample_generates_offline_xml(client: AsyncClient) -> None:
@@ -179,7 +179,7 @@ async def test_valid_saudi_sample_generates_offline_xml(client: AsyncClient) -> 
     assert evidence_files["invoice.xml"]["status"] == "stored"
     assert evidence_files["invoice.xml"]["sha256"]
     assert evidence_files["invoice.xml"]["storage_path"].endswith("_saudi_zatca_offline_invoice.xml")
-    assert evidence_files["invoice_arabic_bilingual_visual.pdf"]["status"] == "stored"
+    assert evidence_files["saudi_visual_invoice.pdf"]["status"] == "stored"
     assert evidence_files["qr.png"]["status"] == "stored"
     assert evidence_files["qr_payload_base64.txt"]["status"] == "stored"
     assert evidence_files["qr_payload_decoded.json"]["status"] == "stored"
@@ -213,6 +213,8 @@ async def test_generated_saudi_xml_contains_expected_values(client: AsyncClient)
 async def test_evidence_zip_includes_generated_saudi_xml_after_generation(client: AsyncClient) -> None:
     payload = await _upload_saudi_workbook(client, saudi_valid_workbook_bytes())
     await client.post(f"/api/uploads/{payload['upload_id']}/generate")
+    acknowledgement = await client.post(f"/api/uploads/{payload['upload_id']}/acknowledge-boundaries")
+    assert acknowledgement.status_code == 200
 
     response = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
 
@@ -227,7 +229,7 @@ async def test_evidence_zip_includes_generated_saudi_xml_after_generation(client
         assert "qr.png" in names
         assert "qr_payload_base64.txt" in names
         assert "qr_payload_decoded.json" in names
-        assert "invoice_arabic_bilingual_visual.pdf" in names
+        assert "saudi_visual_invoice.pdf" in names
         xml = archive.read("invoice.xml").decode("utf-8")
         assert "INV-SA-2026-001" in xml
 

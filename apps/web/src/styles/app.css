@@ -1261,6 +1261,29 @@ h3 {
   border-color: var(--hairline);
 }
 
+.v1-boundary-acknowledgement {
+  background: rgba(70,216,224,.10);
+  border-color: rgba(14,151,161,.28);
+  color: var(--ink-soft);
+  font-size: .72rem;
+  padding: 9px;
+}
+
+.v1-boundary-acknowledgement input {
+  accent-color: var(--accent-cyan);
+}
+
+.official-validation-note {
+  background: rgba(84,74,190,.06);
+  border: 1px solid rgba(84,74,190,.14);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: .73rem;
+  line-height: 1.4;
+  margin: 0;
+  padding: 9px 10px;
+}
+
 .acknowledgement input {
   margin-top: 3px;
 }
