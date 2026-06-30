@@ -1,4 +1,4 @@
-import { Archive, Code2, Download, ExternalLink, FileText, ListChecks, Sparkles, X } from "lucide-react";
+import { Archive, Code2, Download, ExternalLink, FileText, ListChecks, Send, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
@@ -6,6 +6,7 @@ import {
   canonicalInvoiceDownloadUrl,
   canonicalInvoiceUrl,
   evidenceBundleDownloadUrl,
+  fetchEInvoiceBEConfiguration,
   fetchStorecoveSandboxConfiguration,
   fetchGeneratedQrPayloadDecoded,
   generateOutput,
@@ -16,12 +17,14 @@ import {
   generatedQrUrl,
   generatedXmlDownloadUrl,
   generatedXmlUrl,
+  sendToEInvoiceBESandbox,
   sendToStorecoveSandbox,
   validateUploadPipeline
 } from "../services/api";
 import type {
   CountryPack,
   DecodedQrPayload,
+  EInvoiceBEConfigurationStatus,
   ExternalValidationRecord,
   StorecoveConfigurationStatus,
   UploadRecord,
@@ -52,11 +55,13 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(uploadRecord?.validation_report ?? null);
   const [isValidating, setIsValidating] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSendingEInvoiceBE, setIsSendingEInvoiceBE] = useState(false);
   const [isAcknowledging, setIsAcknowledging] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [validationPipelineAttempted, setValidationPipelineAttempted] = useState(false);
   const [generationError, setGenerationError] = useState("");
   const [storecoveConfig, setStorecoveConfig] = useState<StorecoveConfigurationStatus | null>(null);
+  const [eInvoiceBEConfig, setEInvoiceBEConfig] = useState<EInvoiceBEConfigurationStatus | null>(null);
   const isBelgiumPack = pack?.country_pack_id === "belgium_peppol";
   const isSaudiPack = pack?.country_pack_id === "saudi_zatca";
   const isUkPack = pack?.country_pack_id === "uk_info";
@@ -64,6 +69,8 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
   const acknowledgementComplete = Boolean(uploadRecord?.acknowledged_warning_rule_ids?.length);
   const generationSupported = pack?.country_pack_id === "belgium_peppol" || isSaudiPack;
   const storecoveActionSupported = isUkPack && Boolean(pack?.sandbox_test_available_when_configured);
+  const externalValidationPassed = uploadRecord?.external_validation?.status === "passed" && uploadRecord.external_validation.is_valid === true;
+  const eInvoiceBESenderMatchesTenant = eInvoiceBESellerMatchesTenant(uploadRecord, eInvoiceBEConfig);
   const canExportZip =
     Boolean(uploadRecord?.evidence_bundle_preview.files.length) &&
     !hasRegimeMismatch &&
@@ -79,6 +86,14 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
     !hasRegimeMismatch &&
     (validationReport?.summary.blocking_errors ?? 1) === 0 &&
     Boolean(storecoveConfig?.configured);
+  const canSendEInvoiceBESandbox =
+    isBelgiumPack &&
+    Boolean(uploadRecord?.generated_xml_path) &&
+    !hasRegimeMismatch &&
+    (validationReport?.summary.blocking_errors ?? 1) === 0 &&
+    externalValidationPassed &&
+    eInvoiceBESenderMatchesTenant &&
+    Boolean(eInvoiceBEConfig?.configured);
   const generateTitle =
     isUkPack
       ? storecoveConfig?.message ?? "Storecove sandbox is not configured. Add sandbox credentials to enable UK Peppol testing."
@@ -91,6 +106,14 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
         : "Generation is not configured for this country pack.";
   const actionLabel = "Generate";
   const isActionEnabled = isUkPack ? canSendStorecoveSandbox : canGenerate;
+  const eInvoiceBESendTitle = eInvoiceBESandboxSendTitle({
+    config: eInvoiceBEConfig,
+    externalValidationPassed,
+    hasXml: Boolean(uploadRecord?.generated_xml_path),
+    senderMatchesTenant: eInvoiceBESenderMatchesTenant,
+    uploadRecord,
+    validationBlockingErrors: validationReport?.summary.blocking_errors ?? 1
+  });
 
   useEffect(() => {
     setLocalUploadRecord(incomingUploadRecord);
@@ -99,6 +122,7 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
     setGenerationError("");
     setIsExporting(false);
     setValidationPipelineAttempted(false);
+    setIsSendingEInvoiceBE(false);
   }, [incomingUploadRecord?.upload_id]);
 
   useEffect(() => {
@@ -137,6 +161,39 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
       active = false;
     };
   }, [isUkPack]);
+
+  useEffect(() => {
+    let active = true;
+    if (!isBelgiumPack || !externalValidationPassed) {
+      setEInvoiceBEConfig(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    void fetchEInvoiceBEConfiguration()
+      .then((config) => {
+        if (active) setEInvoiceBEConfig(config);
+      })
+      .catch(() => {
+        if (active) {
+          setEInvoiceBEConfig({
+            enabled: false,
+            configured: false,
+            api_base_url: "https://api.e-invoice.be",
+            sandbox_company_number: "",
+            sandbox_peppol_id: "",
+            missing_fields: [],
+            mode: "disabled",
+            message: "e-invoice.be sandbox send is not configured. Add API credentials to enable sandbox send."
+          });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [externalValidationPassed, isBelgiumPack]);
 
   async function handleValidate() {
     if (!uploadRecord) return;
@@ -193,6 +250,22 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
       setGenerationError(error instanceof Error ? error.message : "Storecove sandbox test failed");
     } finally {
       setIsGenerating(false);
+    }
+  }
+
+  async function handleEInvoiceBESandboxSend() {
+    if (!uploadRecord || !canSendEInvoiceBESandbox) return;
+    setIsSendingEInvoiceBE(true);
+    setGenerationError("");
+    try {
+      const record = await sendToEInvoiceBESandbox(uploadRecord.upload_id);
+      setLocalUploadRecord(record);
+      onUploadRecordChange?.(record);
+      setDetailView("outputs");
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : "e-invoice.be sandbox send failed");
+    } finally {
+      setIsSendingEInvoiceBE(false);
     }
   }
 
@@ -271,6 +344,19 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
           {isGenerating ? (isUkPack ? "Sending" : "Generating") : actionLabel}
         </button>
         {generationError ? <p className="action-error">{generationError}</p> : null}
+        {isBelgiumPack ? (
+          <button
+            aria-busy={isSendingEInvoiceBE}
+            className={`button-primary action-button action-command-button ${isSendingEInvoiceBE ? "is-processing" : ""}`}
+            disabled={!canSendEInvoiceBESandbox || isSendingEInvoiceBE}
+            onClick={() => void handleEInvoiceBESandboxSend()}
+            title={eInvoiceBESendTitle}
+            type="button"
+          >
+            <Send aria-hidden="true" size={17} />
+            {isSendingEInvoiceBE ? "Sending" : "Send to e-invoice.be sandbox"}
+          </button>
+        ) : null}
         {acknowledgementRequired ? (
           <label className="acknowledgement v1-boundary-acknowledgement">
             <input
@@ -372,6 +458,7 @@ function GeneratedOutputDetails({ uploadRecord }: { uploadRecord: UploadRecord |
   const hasQr = Boolean(uploadRecord && hasStoredEvidenceFile(uploadRecord, "qr.png"));
   const hasPdf = Boolean(uploadRecord && hasStoredEvidenceFile(uploadRecord, "saudi_visual_invoice.pdf"));
   const hasStorecoveResponse = Boolean(uploadRecord && hasStoredEvidenceFile(uploadRecord, "storecove_response.json"));
+  const hasEInvoiceBESendResponse = Boolean(uploadRecord && hasStoredEvidenceFile(uploadRecord, "einvoicebe_send_response.json"));
   const [decodedQrPayload, setDecodedQrPayload] = useState<DecodedQrPayload | null>(null);
   const [decodedQrError, setDecodedQrError] = useState("");
 
@@ -401,7 +488,7 @@ function GeneratedOutputDetails({ uploadRecord }: { uploadRecord: UploadRecord |
   if (!uploadRecord) {
     return <p className="muted compact">Generated outputs are available after successful generation.</p>;
   }
-  if (!uploadRecord.generated_xml_path && !hasStorecoveResponse) {
+  if (!uploadRecord.generated_xml_path && !hasStorecoveResponse && !hasEInvoiceBESendResponse) {
     return <p className="muted compact">Generated outputs are available after successful generation.</p>;
   }
 
@@ -452,6 +539,46 @@ function GeneratedOutputDetails({ uploadRecord }: { uploadRecord: UploadRecord |
                 ))}
               </ul>
             ) : null}
+          </article>
+        ) : null}
+        {uploadRecord.external_sandbox_send ? (
+          <article className={`output-artefact external-validation-output ${uploadRecord.external_sandbox_send.status}`}>
+            <Send aria-hidden="true" size={19} />
+            <div>
+              <strong>External sandbox send</strong>
+              <span>{formatExternalSandboxSendStatus(uploadRecord.external_sandbox_send.status)}</span>
+              <small>{uploadRecord.external_sandbox_send.submitted_at}</small>
+              {uploadRecord.external_sandbox_send.provider_reference ? <small>{uploadRecord.external_sandbox_send.provider_reference}</small> : null}
+            </div>
+            <p className="external-validation-disclaimer">{uploadRecord.external_sandbox_send.disclaimer}</p>
+            {uploadRecord.external_sandbox_send.messages.length ? (
+              <ul className="external-validation-messages">
+                {uniqueMessages(uploadRecord.external_sandbox_send.messages).map((message, index) => (
+                  <li key={`${message}-${index}`}>{message}</li>
+                ))}
+              </ul>
+            ) : null}
+          </article>
+        ) : null}
+        {uploadRecord.external_sandbox_send?.sender_identity_check ? (
+          <article className="output-artefact sender-identity-output">
+            <ListChecks aria-hidden="true" size={19} />
+            <div>
+              <strong>Sandbox sender identity check</strong>
+              <span>Tenant {uploadRecord.external_sandbox_send.sender_identity_check.tenant_owned_sender_peppol_id ?? "not configured"}</span>
+              <small>
+                XML {uploadRecord.external_sandbox_send.sender_identity_check.xml_seller_endpoint_scheme ?? "-"}:
+                {uploadRecord.external_sandbox_send.sender_identity_check.xml_seller_endpoint_id ?? "-"}
+              </small>
+              <small>
+                Request {uploadRecord.external_sandbox_send.sender_identity_check.send_request_sender_scheme ?? "-"}:
+                {uploadRecord.external_sandbox_send.sender_identity_check.send_request_sender_id ?? "-"}
+              </small>
+            </div>
+            <p className="external-validation-disclaimer">
+              XML sender match: {formatBoolean(uploadRecord.external_sandbox_send.sender_identity_check.xml_sender_matches_tenant)}. Send request match:{" "}
+              {formatBoolean(uploadRecord.external_sandbox_send.sender_identity_check.send_request_sender_matches_tenant)}.
+            </p>
           </article>
         ) : null}
         {hasQr ? (
@@ -665,6 +792,58 @@ function formatExternalValidationStatus(status: string, isValid: boolean | null)
   return `Provider result: ${status.replaceAll("_", " ")}`;
 }
 
+function formatExternalSandboxSendStatus(status: string): string {
+  if (status === "submitted") return "Sandbox send submitted";
+  if (status === "failed") return "Sandbox send failed";
+  if (status === "pending") return "Sandbox send pending";
+  if (status === "not_run") return "Sandbox send not run";
+  return `Sandbox send ${status.replaceAll("_", " ")}`;
+}
+
+function formatBoolean(value: boolean | null | undefined): string {
+  if (value === true) return "yes";
+  if (value === false) return "no";
+  return "not checked";
+}
+
+function eInvoiceBESandboxSendTitle({
+  config,
+  externalValidationPassed,
+  hasXml,
+  senderMatchesTenant,
+  uploadRecord,
+  validationBlockingErrors
+}: {
+  config: EInvoiceBEConfigurationStatus | null;
+  externalValidationPassed: boolean;
+  hasXml: boolean;
+  senderMatchesTenant: boolean;
+  uploadRecord: UploadRecord | null;
+  validationBlockingErrors: number;
+}): string {
+  if (!uploadRecord) return "Upload and validate a Belgium workbook before sandbox send.";
+  if (validationBlockingErrors > 0) return "Internal validation must pass before e-invoice.be sandbox send.";
+  if (!hasXml) return "Belgium XML must be generated before e-invoice.be sandbox send.";
+  if (!externalValidationPassed) return "External e-invoice.be sandbox validation must pass before sandbox send.";
+  if (!config) return "Checking e-invoice.be sandbox configuration.";
+  if (!config.configured) return "e-invoice.be sandbox send is not configured. Add API credentials to enable sandbox send.";
+  if (!senderMatchesTenant) return "Sandbox send requires configured sender metadata to match the e-invoice.be tenant-owned sender Peppol ID.";
+  return "Sandbox send only. This does not prove Peppol delivery, recipient acceptance or final statutory compliance.";
+}
+
+function eInvoiceBESellerMatchesTenant(uploadRecord: UploadRecord | null, config: EInvoiceBEConfigurationStatus | null): boolean {
+  if (!uploadRecord?.canonical_invoice || !config?.sandbox_peppol_id) return false;
+  const sellerPeppolId = uploadRecord.canonical_invoice.seller.einvoicebe_sender_peppol_id;
+  if (sellerPeppolId === undefined || sellerPeppolId === null) return false;
+  return normalisePeppolId(String(sellerPeppolId)) === normalisePeppolId(config.sandbox_peppol_id);
+}
+
+function normalisePeppolId(value: string): string {
+  const [scheme, identifier] = value.split(":", 2);
+  if (!scheme || !identifier) return value.trim();
+  return `${scheme.trim()}:${identifier.trim()}`;
+}
+
 function xmlGenerationTone(uploadRecord: UploadRecord | null, report: ValidationReport, pipelineAttempted: boolean): string {
   if (uploadRecord?.generated_xml_path) return "info";
   if (uploadRecord?.selected_country_pack !== "belgium_peppol") return "info";
@@ -708,6 +887,7 @@ function externalValidationStatusTitle(externalValidation: ExternalValidationRec
   if (!externalValidation) return "External sandbox validation not run";
   if (externalValidation.status === "failed") return "External sandbox validation failed";
   if (externalValidation.status === "passed") return "External sandbox validation passed";
+  if (externalValidation.status === "configuration_error") return "External sandbox validation configuration issue";
   if (externalValidation.status === "skipped") return "External sandbox validation skipped";
   if (externalValidation.status === "not_configured") return "External e-invoice.be sandbox validation not configured.";
   return `External sandbox validation ${externalValidation.status.replaceAll("_", " ")}`;
@@ -715,6 +895,9 @@ function externalValidationStatusTitle(externalValidation: ExternalValidationRec
 
 function externalValidationStatusMessage(externalValidation: ExternalValidationRecord | null): string {
   if (!externalValidation) return "External e-invoice.be sandbox validation has not run for this upload.";
+  if (externalValidation.status === "configuration_error") {
+    return externalValidation.messages[0] ?? "External sandbox validation could not run because the provider configuration needs attention.";
+  }
   if (externalValidation.status === "not_configured") return "External e-invoice.be sandbox validation not configured.";
   if (externalValidation.status === "skipped") return externalValidation.messages[0] ?? "External sandbox validation skipped.";
   if (externalValidation.status === "not_run") return externalValidation.messages[0] ?? "External sandbox validation not run.";

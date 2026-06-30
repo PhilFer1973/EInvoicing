@@ -306,6 +306,184 @@ describe("ReviewExportPanel", () => {
 
     vi.unstubAllGlobals();
   });
+
+  it("runs e-invoice.be sandbox send as a separate provider action after validation passes", async () => {
+    const validatedUpload: UploadRecord = {
+      ...validBelgiumUpload,
+      generated_xml_path: "server/storage/generated/UP-BE-VALID_belgium_peppol_invoice.xml",
+      generated_xml_sha256_hash: "xml-hash",
+      canonical_invoice: {
+        ...validBelgiumUpload.canonical_invoice!,
+        seller: {
+          ...validBelgiumUpload.canonical_invoice!.seller,
+          tax_registration_number: "BE0990251719",
+          enterprise_number: "0990251719",
+          legal_registration_number: "0990251719",
+          peppol_id: "0208:099025170",
+          einvoicebe_sender_peppol_id: "0208:099025170"
+        }
+      },
+      external_validation: {
+        provider: "e-invoice.be",
+        label: "External sandbox validation",
+        status: "passed",
+        is_valid: true,
+        reference: "EINVBE-VALID-001",
+        validated_at: "2026-06-29T12:00:00+00:00",
+        issue_count: 0,
+        messages: [],
+        endpoint: "https://api.e-invoice.be/api/validate/ubl",
+        peppol_delivery: "not_delivered",
+        recipient_acceptance: "not_requested",
+        smp_registration_claim: "not_claimed",
+        disclaimer: "External sandbox validation only. This does not prove Peppol delivery or final statutory compliance."
+      },
+      evidence_bundle_preview: {
+        ...validBelgiumUpload.evidence_bundle_preview,
+        files: [
+          ...validBelgiumUpload.evidence_bundle_preview.files,
+          { filename: "invoice.xml", status: "stored", sha256: "xml-hash", storage_path: "generated/invoice.xml" }
+        ]
+      }
+    };
+    const sentUpload: UploadRecord = {
+      ...validatedUpload,
+      status: "einvoicebe_sandbox_send_submitted",
+      external_sandbox_send: {
+        provider: "e-invoice.be",
+        label: "External sandbox send",
+        status: "submitted",
+        submitted_at: "2026-06-30T10:00:00+00:00",
+        provider_reference: "DOC-SEND-001",
+        document_id: "DOC-SEND-001",
+        provider_document_state: "TRANSIT",
+        endpoint: "https://api.e-invoice.be/api/documents/DOC-SEND-001/send",
+        messages: ["Sandbox send submitted to e-invoice.be."],
+        sender_identity_check: {
+          tenant_owned_sender_peppol_id: "0208:099025170",
+          tenant_sender_scheme: "0208",
+          tenant_sender_id: "099025170",
+          xml_seller_endpoint_scheme: "0208",
+          xml_seller_endpoint_id: "099025170",
+          xml_seller_party_legal_company_id: "0990251719",
+          xml_seller_tax_scheme_company_id: "BE0990251719",
+          send_request_sender_source: "omitted_provider_tenant_inferred",
+          send_request_sender_scheme: null,
+          send_request_sender_id: null,
+          xml_sender_matches_tenant: true,
+          send_request_sender_matches_tenant: null
+        },
+        peppol_delivery: "not_claimed",
+        recipient_acceptance: "not_claimed",
+        smp_registration_claim: "not_claimed",
+        disclaimer: "Sandbox send only. This does not prove Peppol delivery, recipient acceptance or final statutory compliance."
+      },
+      evidence_bundle_preview: {
+        ...validatedUpload.evidence_bundle_preview,
+        files: [
+          ...validatedUpload.evidence_bundle_preview.files,
+          { filename: "einvoicebe_send_response.json", status: "stored", sha256: "send-response-hash", storage_path: "generated/send-response.json" }
+        ]
+      }
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            enabled: true,
+            configured: true,
+            api_base_url: "https://api.e-invoice.be",
+            sandbox_company_number: "099025170",
+            sandbox_peppol_id: "0208:099025170",
+            missing_fields: [],
+            mode: "sandbox_validation",
+            message: "e-invoice.be sandbox validation is configured."
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(sentUpload), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    function StatefulPanel() {
+      const [record, setRecord] = useState(validatedUpload);
+      return <ReviewExportPanel pack={belgiumPack} uploadRecord={record} onUploadRecordChange={setRecord} />;
+    }
+
+    render(<StatefulPanel />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("http://localhost:8000/api/uploads/einvoicebe/configuration", undefined));
+    expect(screen.getByRole("button", { name: "Send to e-invoice.be sandbox" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Send to e-invoice.be sandbox" }));
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Generated Outputs" })).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/uploads/UP-BE-VALID/einvoicebe-sandbox-send",
+      { method: "POST" }
+    );
+    expect(screen.getByText("External sandbox send")).toBeInTheDocument();
+    expect(screen.getByText("Sandbox send submitted")).toBeInTheDocument();
+    expect(screen.getByText("Sandbox send only. This does not prove Peppol delivery, recipient acceptance or final statutory compliance.")).toBeInTheDocument();
+    expect(screen.getByText("Sandbox sender identity check")).toBeInTheDocument();
+    expect(screen.getByText("Tenant 0208:099025170")).toBeInTheDocument();
+    expect(screen.getByText("XML 0208:099025170")).toBeInTheDocument();
+    expect(screen.getByText("Request -:-")).toBeInTheDocument();
+    expect(screen.getByText("XML sender match: yes. Send request match: not checked.")).toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps e-invoice.be sandbox send disabled when the invoice seller is not tenant-owned", async () => {
+    const validatedUpload: UploadRecord = {
+      ...validBelgiumUpload,
+      generated_xml_path: "server/storage/generated/UP-BE-VALID_belgium_peppol_invoice.xml",
+      generated_xml_sha256_hash: "xml-hash",
+      external_validation: {
+        provider: "e-invoice.be",
+        label: "External sandbox validation",
+        status: "passed",
+        is_valid: true,
+        reference: "EINVBE-VALID-001",
+        validated_at: "2026-06-29T12:00:00+00:00",
+        issue_count: 0,
+        messages: [],
+        endpoint: "https://api.e-invoice.be/api/validate/ubl",
+        peppol_delivery: "not_delivered",
+        recipient_acceptance: "not_requested",
+        smp_registration_claim: "not_claimed",
+        disclaimer: "External sandbox validation only. This does not prove Peppol delivery or final statutory compliance."
+      }
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          enabled: true,
+          configured: true,
+          api_base_url: "https://api.e-invoice.be",
+          sandbox_company_number: "099025170",
+          sandbox_peppol_id: "0208:099025170",
+          missing_fields: [],
+          mode: "sandbox_validation",
+          message: "e-invoice.be sandbox validation is configured."
+        }),
+        { status: 200 }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReviewExportPanel pack={belgiumPack} uploadRecord={validatedUpload} onUploadRecordChange={vi.fn()} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("http://localhost:8000/api/uploads/einvoicebe/configuration", undefined));
+    const button = screen.getByRole("button", { name: "Send to e-invoice.be sandbox" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute(
+      "title",
+      "Sandbox send requires configured sender metadata to match the e-invoice.be tenant-owned sender Peppol ID."
+    );
+
+    vi.unstubAllGlobals();
+  });
 });
 
 const saudiPack: CountryPack = {

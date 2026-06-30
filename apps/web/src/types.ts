@@ -133,6 +133,36 @@ export interface ExternalValidationRecord {
   disclaimer: string;
 }
 
+export interface ExternalSandboxSendRecord {
+  provider: string;
+  label: string;
+  status: string;
+  submitted_at: string;
+  provider_reference: string | null;
+  document_id: string | null;
+  provider_document_state: string | null;
+  endpoint: string;
+  messages: string[];
+  sender_identity_check?: {
+    tenant_owned_sender_peppol_id?: string;
+    tenant_sender_scheme?: string | null;
+    tenant_sender_id?: string | null;
+    xml_seller_endpoint_scheme?: string | null;
+    xml_seller_endpoint_id?: string | null;
+    xml_seller_party_legal_company_id?: string | null;
+    xml_seller_tax_scheme_company_id?: string | null;
+    send_request_sender_source?: string | null;
+    send_request_sender_scheme?: string | null;
+    send_request_sender_id?: string | null;
+    xml_sender_matches_tenant?: boolean;
+    send_request_sender_matches_tenant?: boolean | null;
+  } | null;
+  peppol_delivery?: string;
+  recipient_acceptance?: string;
+  smp_registration_claim?: string;
+  disclaimer: string;
+}
+
 export interface UploadRecord {
   upload_id: string;
   original_filename: string;
@@ -150,6 +180,7 @@ export interface UploadRecord {
   storecove_submission_status?: string | null;
   storecove_mocked?: boolean;
   external_validation?: ExternalValidationRecord | null;
+  external_sandbox_send?: ExternalSandboxSendRecord | null;
   acknowledged_warning_rule_ids?: string[];
   warning_acknowledged_at?: string | null;
   canonical_invoice: CanonicalInvoice | null;

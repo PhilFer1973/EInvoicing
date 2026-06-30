@@ -50,6 +50,10 @@ class CountryAdapter:
                     EvidenceFile(filename="einvoicebe_validation_request.json", status="pending_external_validation"),
                     EvidenceFile(filename="einvoicebe_validation_response.json", status="pending_external_validation"),
                     EvidenceFile(filename="external_validation_status.json", status="pending_external_validation"),
+                    EvidenceFile(filename="einvoicebe_send_request.json", status="pending_sandbox_send"),
+                    EvidenceFile(filename="einvoicebe_send_response.json", status="pending_sandbox_send"),
+                    EvidenceFile(filename="external_sandbox_send_status.json", status="pending_sandbox_send"),
+                    EvidenceFile(filename="einvoicebe_send_provider_reference.txt", status="pending_sandbox_send"),
                 ]
             )
         if self.pack.requires_pdf:

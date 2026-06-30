@@ -27,6 +27,22 @@ def belgium_einvoicebe_validation_workbook_bytes(**overrides: Any) -> bytes:
     return stream.getvalue()
 
 
+def belgium_einvoicebe_send_workbook_bytes(**overrides: Any) -> bytes:
+    defaults = {
+        "seller_legal_name": "Test Company BV",
+        "seller_vat": "BE0990251719",
+        "seller_company_number": "0990251719",
+        "seller_enterprise_number": "0990251719",
+        "seller_peppol_id": "0208:0990251719",
+        "seller_einvoicebe_sender_peppol_id": "0208:099025170",
+    }
+    defaults.update(overrides)
+    workbook = belgium_valid_workbook(**defaults)
+    stream = BytesIO()
+    workbook.save(stream)
+    return stream.getvalue()
+
+
 def belgium_valid_workbook(
     *,
     remove_sheet: str | None = None,
@@ -39,6 +55,7 @@ def belgium_valid_workbook(
     seller_company_number: str = "0990251719",
     seller_enterprise_number: str = "0990251719",
     seller_peppol_id: str | None = "0208:0990251719",
+    seller_einvoicebe_sender_peppol_id: str | None = None,
     buyer_vat: str = "BE0987654394",
     buyer_company_number: str = "0987654394",
     buyer_enterprise_number: str = "0987654394",
@@ -73,6 +90,7 @@ def belgium_valid_workbook(
             "payment_account_name",
             "peppol_id",
             "peppol_scheme_id",
+            "einvoicebe_sender_peppol_id",
         ]
     )
     entities.append(
@@ -98,6 +116,7 @@ def belgium_valid_workbook(
             seller_legal_name,
             seller_peppol_id,
             "0208" if seller_peppol_id else "",
+            seller_einvoicebe_sender_peppol_id or "",
         ]
     )
 

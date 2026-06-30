@@ -12,14 +12,23 @@ from app.integrations.einvoicebe.client import (
     EInvoiceBEConfigurationError,
     load_einvoicebe_config,
     load_einvoicebe_configuration_status,
+    submit_ubl_sandbox_send,
     submit_ubl_validation,
 )
-from app.integrations.einvoicebe.mapper import build_external_validation_status, build_ubl_validation_request_evidence
+from app.integrations.einvoicebe.diagnostics import build_sender_identity_check
+from app.integrations.einvoicebe.mapper import (
+    build_external_validation_status,
+    build_sandbox_send_status,
+    build_ubl_sandbox_send_request_evidence,
+    build_ubl_validation_request_evidence,
+)
 from app.integrations.einvoicebe.redaction import redact_einvoicebe_secrets
 from app.integrations.einvoicebe.schemas import (
+    EINVOICEBE_SANDBOX_SEND_WORDING,
     EINVOICEBE_SANDBOX_WORDING,
     EInvoiceBEConfigurationStatus,
     EInvoiceBEExternalValidationStatus,
+    EInvoiceBESandboxSendStatus,
 )
 from app.integrations.storecove.client import (
     StorecoveConfigurationError,
@@ -32,7 +41,7 @@ from app.integrations.storecove.client import (
 from app.integrations.storecove.mapper import map_canonical_to_storecove_request
 from app.integrations.storecove.schemas import StorecoveConfigurationStatus, UK_SANDBOX_WORDING
 from app.models.canonical import CanonicalInvoice
-from app.models.upload import EvidenceBundlePreview, ExternalValidationRecord, UploadRecord
+from app.models.upload import EvidenceBundlePreview, ExternalSandboxSendRecord, ExternalValidationRecord, UploadRecord
 from app.models.validation import ValidationReport
 from app.services.country_packs import CountryPackNotFound, get_country_pack
 from app.services.evidence import build_evidence_metadata
@@ -159,6 +168,10 @@ def download_evidence_bundle(upload_id: str) -> StreamingResponse:
         _write_evidence_file(archive, record, "einvoicebe_validation_request.json")
         _write_evidence_file(archive, record, "einvoicebe_validation_response.json")
         _write_evidence_file(archive, record, "external_validation_status.json")
+        _write_evidence_file(archive, record, "einvoicebe_send_request.json")
+        _write_evidence_file(archive, record, "einvoicebe_send_response.json")
+        _write_evidence_file(archive, record, "external_sandbox_send_status.json")
+        _write_evidence_file(archive, record, "einvoicebe_send_provider_reference.txt")
         if record.selected_country_pack == "uk_info":
             archive.writestr("README_sandbox_only.txt", _uk_sandbox_readme())
         metadata = build_evidence_metadata(record, pack)
@@ -202,6 +215,19 @@ def validate_with_einvoicebe(upload_id: str) -> UploadRecord:
 
     _run_einvoicebe_external_validation(record, config)
     record.evidence_bundle_preview.status = "belgium_xml_generated_einvoicebe_validated_milestone_5b"
+    return save_upload(record)
+
+
+@router.post("/{upload_id}/einvoicebe-sandbox-send", response_model=UploadRecord)
+def send_to_einvoicebe_sandbox(upload_id: str) -> UploadRecord:
+    record = _require_upload(upload_id)
+    _ensure_einvoicebe_sandbox_send_allowed(record)
+
+    try:
+        config = load_einvoicebe_config()
+    except EInvoiceBEConfigurationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    _run_einvoicebe_sandbox_send(record, config)
     return save_upload(record)
 
 
@@ -568,6 +594,7 @@ def _run_einvoicebe_external_validation(record: UploadRecord, config) -> None:
         endpoint=config.validation_url,
         validated_at=validated_at,
     )
+    _append_einvoicebe_sender_identity_hint(status_payload, response_payload, config, xml_bytes)
 
     response_path, response_hash = save_json(
         "generated",
@@ -578,6 +605,150 @@ def _run_einvoicebe_external_validation(record: UploadRecord, config) -> None:
     _store_external_validation_status(record, status_payload)
 
 
+def _ensure_einvoicebe_sandbox_send_allowed(record: UploadRecord) -> None:
+    if record.selected_country_pack != "belgium_peppol":
+        raise HTTPException(status_code=400, detail="e-invoice.be sandbox send is available only for Belgium XML outputs.")
+    if not record.canonical_invoice:
+        raise HTTPException(status_code=400, detail="Canonical invoice JSON is required before sandbox send.")
+    if record.validation_report.summary.blocking_errors > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Internal validation must pass before e-invoice.be sandbox send.",
+        )
+    if not record.generated_xml_path:
+        raise HTTPException(
+            status_code=409,
+            detail="Belgium XML must be generated before e-invoice.be sandbox send.",
+        )
+    if not record.external_validation or record.external_validation.status != "passed" or record.external_validation.is_valid is not True:
+        raise HTTPException(
+            status_code=409,
+            detail="External e-invoice.be sandbox validation must pass before sandbox send.",
+        )
+
+
+def _run_einvoicebe_sandbox_send(record: UploadRecord, config) -> None:
+    if not record.generated_xml_path:
+        raise HTTPException(status_code=409, detail="Generate Belgium XML before e-invoice.be sandbox send.")
+    if not record.canonical_invoice:
+        raise HTTPException(status_code=400, detail="Canonical invoice JSON is required before e-invoice.be sandbox send.")
+
+    xml_path = storage_path_from_relative(record.generated_xml_path)
+    xml_bytes = xml_path.read_bytes()
+    xml_filename = _generated_xml_filename(record)
+    sender_peppol_id = _einvoicebe_send_request_sender_peppol_id(record.canonical_invoice)
+    receiver_peppol_id = _canonical_party_peppol_id(record.canonical_invoice.buyer)
+    sender_identity_check = build_sender_identity_check(
+        tenant_peppol_id=config.sandbox_peppol_id,
+        xml_bytes=xml_bytes,
+        send_request_sender_peppol_id=sender_peppol_id,
+    )
+    request_evidence = build_ubl_sandbox_send_request_evidence(
+        config=config,
+        xml_bytes=xml_bytes,
+        filename=xml_filename,
+        sender_peppol_id=sender_peppol_id,
+        receiver_peppol_id=receiver_peppol_id,
+    )
+    _store_einvoicebe_send_request(record, config, request_evidence)
+
+    try:
+        response_payload = submit_ubl_sandbox_send(
+            config=config,
+            xml_bytes=xml_bytes,
+            filename=xml_filename,
+            sender_peppol_id=sender_peppol_id,
+            receiver_peppol_id=receiver_peppol_id,
+        )
+    except Exception:
+        _store_external_sandbox_send_status(
+            record,
+            _external_sandbox_send_failed(
+                endpoint=f"{config.api_base_url.rstrip('/')}/api/documents/{{document_id}}/send",
+                message="e-invoice.be sandbox send failed before a provider response was captured.",
+            ),
+        )
+        record.status = "einvoicebe_sandbox_send_failed"
+        record.generated_at = datetime.now(timezone.utc).isoformat()
+        return
+
+    if response_payload.document_id:
+        request_evidence = build_ubl_sandbox_send_request_evidence(
+            config=config,
+            xml_bytes=xml_bytes,
+            filename=xml_filename,
+            sender_peppol_id=sender_peppol_id,
+            receiver_peppol_id=receiver_peppol_id,
+            document_id=response_payload.document_id,
+        )
+        _store_einvoicebe_send_request(record, config, request_evidence)
+
+    response_path, response_hash = save_json(
+        "generated",
+        f"{record.upload_id}_einvoicebe_send_response.json",
+        redact_einvoicebe_secrets(response_payload.model_dump(mode="json"), config.api_key),
+    )
+    _mark_generated_file(record, "einvoicebe_send_response.json", relative_storage_path(response_path), response_hash)
+
+    submitted_at = datetime.now(timezone.utc).isoformat()
+    send_endpoint = (
+        config.document_send_url(response_payload.document_id)
+        if response_payload.document_id
+        else f"{config.api_base_url.rstrip('/')}/api/documents/{{document_id}}/send"
+    )
+    status_payload = build_sandbox_send_status(
+        response=response_payload,
+        endpoint=send_endpoint,
+        submitted_at=submitted_at,
+        sender_identity_check=sender_identity_check,
+    )
+    if (
+        response_payload.status == "failed"
+        and "tenant does not own the sender peppol id" in response_payload.message.lower()
+        and sender_identity_check["send_request_sender_source"] == "omitted_provider_tenant_inferred"
+    ):
+        status_payload.messages = [
+            "Sandbox provider rejected the send because the tenant does not own the sender Peppol ID in the generated Belgium XML. This is the known e-invoice.be sandbox identity limitation.",
+            response_payload.message,
+        ]
+    _store_external_sandbox_send_status(record, status_payload)
+    if response_payload.provider_reference:
+        reference_path, reference_hash = save_binary(
+            "generated",
+            f"{record.upload_id}_einvoicebe_send_provider_reference.txt",
+            response_payload.provider_reference.encode("utf-8"),
+        )
+        _mark_generated_file(
+            record,
+            "einvoicebe_send_provider_reference.txt",
+            relative_storage_path(reference_path),
+            reference_hash,
+        )
+
+    record.status = f"einvoicebe_sandbox_send_{response_payload.status}"
+    record.generated_at = submitted_at
+    record.evidence_bundle_preview.status = "belgium_einvoicebe_sandbox_send_milestone_5c"
+
+
+def _store_einvoicebe_send_request(record: UploadRecord, config, request_evidence) -> None:
+    request_path, request_hash = save_json(
+        "generated",
+        f"{record.upload_id}_einvoicebe_send_request.json",
+        redact_einvoicebe_secrets(request_evidence.model_dump(mode="json"), config.api_key),
+    )
+    _mark_generated_file(record, "einvoicebe_send_request.json", relative_storage_path(request_path), request_hash)
+
+
+def _store_external_sandbox_send_status(record: UploadRecord, status_payload: EInvoiceBESandboxSendStatus) -> None:
+    status_path, status_hash = save_json(
+        "generated",
+        f"{record.upload_id}_external_sandbox_send_status.json",
+        status_payload.model_dump(mode="json"),
+    )
+    _mark_generated_file(record, "external_sandbox_send_status.json", relative_storage_path(status_path), status_hash)
+    record.external_sandbox_send = ExternalSandboxSendRecord(**status_payload.model_dump(mode="json"))
+
+
 def _store_external_validation_status(record: UploadRecord, status_payload: EInvoiceBEExternalValidationStatus) -> None:
     status_path, status_hash = save_json(
         "generated",
@@ -586,6 +757,50 @@ def _store_external_validation_status(record: UploadRecord, status_payload: EInv
     )
     _mark_generated_file(record, "external_validation_status.json", relative_storage_path(status_path), status_hash)
     record.external_validation = ExternalValidationRecord(**status_payload.model_dump(mode="json"))
+
+
+def _append_einvoicebe_sender_identity_hint(
+    status_payload: EInvoiceBEExternalValidationStatus,
+    response_payload,
+    config,
+    xml_bytes: bytes,
+) -> None:
+    sender_identity_check = build_sender_identity_check(
+        tenant_peppol_id=config.sandbox_peppol_id,
+        xml_bytes=xml_bytes,
+        send_request_sender_peppol_id=None,
+    )
+    if sender_identity_check["xml_seller_endpoint_scheme"] != "0208":
+        return
+    if not sender_identity_check["xml_sender_matches_tenant"]:
+        return
+
+    has_endpoint_format_error = any(
+        issue.rule_id == "PEPPOL-COMMON-R043"
+        and "EndpointID" in str(issue.location or "")
+        for issue in response_payload.issues
+    )
+    if not has_endpoint_format_error:
+        return
+
+    message = (
+        f"Configured e-invoice.be tenant Peppol ID {config.sandbox_peppol_id} is used as the XML seller EndpointID, "
+        "but provider rule PEPPOL-COMMON-R043 requires a 10-digit Belgian enterprise number that passes mod97. "
+        "Sandbox send cannot proceed until the tenant-owned sender Peppol ID also satisfies external validation."
+    )
+    if message not in status_payload.messages:
+        status_payload.messages.append(message)
+
+
+def _canonical_party_peppol_id(party: dict) -> str | None:
+    value = party.get("peppol_id")
+    if not value:
+        return None
+    return str(value)
+
+
+def _einvoicebe_send_request_sender_peppol_id(canonical: CanonicalInvoice) -> str | None:
+    return None
 
 
 def _external_validation_not_configured(endpoint: str) -> EInvoiceBEExternalValidationStatus:
@@ -637,6 +852,19 @@ def _external_validation_failed(endpoint: str) -> EInvoiceBEExternalValidationSt
         messages=["External e-invoice.be sandbox validation failed before a provider response was captured."],
         endpoint=endpoint,
         disclaimer=EINVOICEBE_SANDBOX_WORDING,
+    )
+
+
+def _external_sandbox_send_failed(endpoint: str, message: str) -> EInvoiceBESandboxSendStatus:
+    return EInvoiceBESandboxSendStatus(
+        status="failed",
+        submitted_at=datetime.now(timezone.utc).isoformat(),
+        provider_reference=None,
+        document_id=None,
+        provider_document_state=None,
+        endpoint=endpoint,
+        messages=[message],
+        disclaimer=EINVOICEBE_SANDBOX_SEND_WORDING,
     )
 
 

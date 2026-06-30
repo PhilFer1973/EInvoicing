@@ -39,6 +39,23 @@ class ExternalValidationRecord(BaseModel):
     disclaimer: str
 
 
+class ExternalSandboxSendRecord(BaseModel):
+    provider: str
+    label: str
+    status: str
+    submitted_at: str
+    provider_reference: str | None = None
+    document_id: str | None = None
+    provider_document_state: str | None = None
+    endpoint: str
+    messages: list[str] = Field(default_factory=list)
+    sender_identity_check: dict | None = None
+    peppol_delivery: str = "not_claimed"
+    recipient_acceptance: str = "not_claimed"
+    smp_registration_claim: str = "not_claimed"
+    disclaimer: str
+
+
 class UploadRecord(BaseModel):
     upload_id: str
     original_filename: str
@@ -56,6 +73,7 @@ class UploadRecord(BaseModel):
     storecove_submission_status: str | None = None
     storecove_mocked: bool = False
     external_validation: ExternalValidationRecord | None = None
+    external_sandbox_send: ExternalSandboxSendRecord | None = None
     acknowledged_warning_rule_ids: list[str] = Field(default_factory=list)
     warning_acknowledged_at: str | None = None
     canonical_invoice: CanonicalInvoice | None = None

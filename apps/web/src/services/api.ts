@@ -117,6 +117,12 @@ export async function validateWithEInvoiceBE(uploadId: string): Promise<UploadRe
   });
 }
 
+export async function sendToEInvoiceBESandbox(uploadId: string): Promise<UploadRecord> {
+  return request<UploadRecord>(`/api/uploads/${uploadId}/einvoicebe-sandbox-send`, {
+    method: "POST"
+  });
+}
+
 export async function acknowledgeBoundaryWarnings(uploadId: string): Promise<UploadRecord> {
   return request<UploadRecord>(`/api/uploads/${uploadId}/acknowledge-boundaries`, {
     method: "POST"

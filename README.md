@@ -55,6 +55,7 @@ Open `http://127.0.0.1:5173`. The frontend uses `http://localhost:8000` by defau
 
 - Belgium: `C:\Users\Philip\Downloads\EInvoicing\test_data\workbooks\BE-VALID-001.xlsx`
 - Belgium e-invoice.be sandbox validation: `C:\Users\Philip\Downloads\EInvoicing\test_data\workbooks\BE-EINVOICEBE-VALIDATION-001.xlsx`
+- Belgium e-invoice.be sandbox send: `C:\Users\Philip\Downloads\EInvoicing\test_data\workbooks\BE-EINVOICEBE-SEND-001.xlsx`
 - Saudi Arabia: `C:\Users\Philip\Downloads\EInvoicing\test_data\workbooks\SA-VALID-001.xlsx`
 - United Kingdom: `C:\Users\Philip\Downloads\EInvoicing\test_data\workbooks\UK-PEPPOL-SANDBOX-001.xlsx`
 
@@ -69,9 +70,15 @@ The **Export Template** button downloads a four-sheet starter workbook: `entitie
 
 The bundle contains the workbook snapshot, canonical invoice, validation report, Belgium XML, country-pack manifest, evidence metadata, and hashes.
 
-### Optional e-invoice.be Sandbox Validation
+### Optional e-invoice.be Sandbox Validation And Send
 
 Milestone 5B adds an optional Belgium-only external sandbox validation stage inside the main **Validate** pipeline. It generates Belgium UBL XML from canonical invoice JSON where needed, validates that XML with e-invoice.be when configured, and stores the provider response as evidence. It does not deliver through Peppol, prove recipient acceptance, prove SMP registration, or prove final statutory compliance.
+
+Milestone 5C adds an optional e-invoice.be sandbox send/test action after validation has passed. This uses the documented e-invoice.be document flow: `POST /api/documents/ubl` with multipart form field `file`, then `POST /api/documents/{document_id}/send` with optional Peppol ID query parameters. It is still sandbox-provider workflow evidence only:
+
+```text
+Sandbox send only. This does not prove Peppol delivery, recipient acceptance or final statutory compliance.
+```
 
 Default configuration is disabled:
 
@@ -99,11 +106,14 @@ Then:
 
 1. Start the frontend with `npm run dev -- --port 5173`.
 2. Select `Belgium / Peppol BIS Billing 3.0`.
-3. Upload `BE-EINVOICEBE-VALIDATION-001.xlsx`. This sample uses `Test Company BV` with structurally valid Belgian VAT, enterprise and Peppol `0208` identifiers for UBL sandbox validation. The e-invoice.be `/api/me/` company number and Peppol ID remain configuration metadata and are stored separately from the generated UBL identifiers.
+3. Upload `BE-EINVOICEBE-VALIDATION-001.xlsx` for validation-only testing, or `BE-EINVOICEBE-SEND-001.xlsx` for sandbox send testing. The send request omits explicit sender query parameters so e-invoice.be can infer the sender from the configured sandbox tenant/provider context.
 4. Select **Validate**. When configured, this automatically runs internal validation, generates Belgium XML for validation, and runs e-invoice.be sandbox validation.
-5. Select **Generate** to open generated outputs, or **Export ZIP** for the evidence bundle.
+5. If external sandbox validation passes and the workbook's `einvoicebe_sender_peppol_id` matches `EINVOICEBE_SANDBOX_PEPPOL_ID`, select **Send to e-invoice.be sandbox** to run the optional sandbox send/test action.
+6. Select **Generate** to open generated outputs, or **Export ZIP** for the evidence bundle.
 
-The e-invoice.be evidence files are `einvoicebe_validation_request.json`, `einvoicebe_validation_response.json`, and `external_validation_status.json`. API keys are read from environment variables only and are redacted from evidence.
+The e-invoice.be validation evidence files are `einvoicebe_validation_request.json`, `einvoicebe_validation_response.json`, and `external_validation_status.json`. If sandbox send has run, the bundle also includes `einvoicebe_send_request.json`, `einvoicebe_send_response.json`, `external_sandbox_send_status.json`, and `einvoicebe_send_provider_reference.txt` when the provider returns a reference. API keys are read from environment variables only and are redacted from evidence.
+
+Known limitation: The e-invoice.be sandbox send flow currently reaches the provider and captures the provider response, but successful sandbox send is blocked by a sandbox tenant Peppol ID mismatch. External validation passes; send completion is parked pending provider clarification.
 
 ## Saudi Demo
 

@@ -36,7 +36,14 @@ def list_audit_entries() -> list[AuditEntry]:
                 pack_version=upload.evidence_bundle_preview.country_pack_version,
                 download_zip=(
                     f"/api/uploads/{upload.upload_id}/evidence-bundle/download"
-                    if upload.status in {"generated", "storecove_sandbox_mocked"}
+                    if upload.status
+                    in {
+                        "generated",
+                        "storecove_sandbox_mocked",
+                        "einvoicebe_sandbox_send_submitted",
+                        "einvoicebe_sandbox_send_failed",
+                        "einvoicebe_sandbox_send_pending",
+                    }
                     else None
                 ),
             )
