@@ -37,27 +37,4 @@ def build_validation_report(results: list[ValidationResult]) -> ValidationReport
 
 
 def boundary_results_for_pack(pack: CountryPack) -> list[ValidationResult]:
-    if pack.country_pack_id == "saudi_zatca":
-        warnings = [
-            ("SA-V1-BOUNDARY-001", "V1 does not submit invoices to ZATCA/FATOORA."),
-            ("SA-V1-BOUNDARY-002", "V1 does not clear standard B2B invoices."),
-            ("SA-V1-BOUNDARY-003", "V1 does not report simplified invoices."),
-            ("SA-V1-BOUNDARY-004", "V1 does not apply a ZATCA clearance stamp."),
-            ("SA-V1-BOUNDARY-005", "V1 does not create production cryptographic signatures."),
-            ("SA-V1-BOUNDARY-006", "Generated outputs are not live-valid Saudi B2B tax invoices."),
-        ]
-        return [
-            ValidationResult(
-                rule_id=rule_id,
-                layer="country_boundary",
-                severity="warning_ack_required",
-                status="failed",
-                message=message,
-                field_path="invoice.selected_country_pack",
-                country_pack_id=pack.country_pack_id,
-                country_pack_version=pack.pack_version,
-                corrective_action="Acknowledge this Saudi V1 boundary before relying on any exported evidence bundle.",
-            )
-            for rule_id, message in warnings
-        ]
     return []

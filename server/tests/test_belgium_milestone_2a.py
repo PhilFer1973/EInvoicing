@@ -222,7 +222,7 @@ async def test_evidence_zip_includes_generated_belgium_xml_after_generation(clie
         assert evidence["source_workbook"]["filename"] == "BE-VALID-001.xlsx"
         assert evidence["validation"]["internal_validation"] == "passed"
         assert evidence["official_artefact_validation"]["status"] == "not_configured"
-        assert "Peppol Schematron validation has run" in evidence["official_artefact_validation"]["note"]
+        assert "official_xml_validator_status" in evidence["official_artefact_validation"]["note"]
         assert any(output["filename"] == "invoice.xml" for output in evidence["generated_outputs"])
 
 

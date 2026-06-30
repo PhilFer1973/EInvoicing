@@ -61,7 +61,7 @@ async def test_valid_belgium_pipeline_runs_xml_validation_and_adds_evidence(
         evidence = json.loads(archive.read("evidence_metadata.json"))
         assert evidence["xml_validation"]["overall_status"] == "passed"
         assert evidence["official_xml_validator_status"]["status"] == "not_configured"
-        assert "Official validator not configured in this milestone" in evidence["official_xml_validator_status"]["note"]
+        assert "Official validator artefact not configured" in evidence["official_xml_validator_status"]["note"]
 
 
 def test_malformed_xml_fails_well_formedness_cleanly() -> None:

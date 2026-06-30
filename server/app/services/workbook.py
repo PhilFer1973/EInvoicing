@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 from typing import Any
@@ -69,6 +70,7 @@ REQUIRED_COLUMNS = {
 
 def parse_workbook_upload(content: bytes, filename: str, pack: CountryPack) -> UploadRecord:
     upload_id = f"UP-{uuid4().hex[:10].upper()}"
+    uploaded_at = datetime.now(UTC).isoformat()
     workbook_hash = hashlib.sha256(content).hexdigest()
     results: list[ValidationResult] = []
     canonical_invoice: CanonicalInvoice | None = None
@@ -97,6 +99,7 @@ def parse_workbook_upload(content: bytes, filename: str, pack: CountryPack) -> U
         return UploadRecord(
             upload_id=upload_id,
             original_filename=filename,
+            uploaded_at=uploaded_at,
             selected_country_pack=pack.country_pack_id,
             selected_output_profile=pack.default_output_profile,
             workbook_sha256_hash=workbook_hash,
@@ -202,6 +205,7 @@ def parse_workbook_upload(content: bytes, filename: str, pack: CountryPack) -> U
     return UploadRecord(
         upload_id=upload_id,
         original_filename=filename,
+        uploaded_at=uploaded_at,
         selected_country_pack=pack.country_pack_id,
         selected_output_profile=pack.default_output_profile,
         workbook_sha256_hash=workbook_hash,

@@ -52,7 +52,7 @@ from app.services.upload_store import get_upload, save_upload
 from app.services.ubl_xml import generate_belgium_ubl_invoice_xml
 from app.services.workbook import parse_workbook_upload
 from app.storage.file_store import relative_storage_path, save_binary, save_json, storage_path_from_relative
-from app.validation.xml_validator import validate_belgium_invoice_xml
+from app.validation.xml_validator import run_belgium_xml_validation
 
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -159,6 +159,10 @@ def download_evidence_bundle(upload_id: str) -> StreamingResponse:
         _write_stored_file(archive, "validation_report.json", record.validation_report_path)
         _write_stored_file(archive, "invoice.xml", record.generated_xml_path)
         _write_stored_file(archive, "xml_validation_report.json", record.xml_validation_report_path)
+        _write_evidence_file(archive, record, "en16931_validation_report.json")
+        _write_evidence_file(archive, record, "peppol_schematron_validation_report.json")
+        _write_evidence_file(archive, record, "en16931_validation_raw.svrl")
+        _write_evidence_file(archive, record, "peppol_schematron_validation_raw.svrl")
         _write_evidence_file(archive, record, "qr_payload_base64.txt")
         _write_evidence_file(archive, record, "qr_payload_decoded.json")
         _write_evidence_file(archive, record, "qr.png")
@@ -605,7 +609,26 @@ def _run_belgium_xml_validation_for_record(record: UploadRecord) -> None:
         raise HTTPException(status_code=409, detail="Generate Belgium XML before XML validation.")
 
     xml_path = storage_path_from_relative(record.generated_xml_path)
-    report = validate_belgium_invoice_xml(xml_path.read_bytes())
+    execution = run_belgium_xml_validation(xml_path.read_bytes())
+    report = execution.report
+    for raw_report in execution.raw_reports:
+        raw_path, raw_hash = save_binary("generated", f"{record.upload_id}_{raw_report.filename}", raw_report.content)
+        relative_raw_path = relative_storage_path(raw_path)
+        for result in report.results:
+            if result.validator_type == raw_report.validator_type:
+                result.raw_output_path = relative_raw_path
+        _mark_generated_file(record, raw_report.filename, relative_raw_path, raw_hash)
+
+    for result in report.results:
+        if result.validator_type in {"en16931", "peppol_schematron"}:
+            filename = (
+                "en16931_validation_report.json"
+                if result.validator_type == "en16931"
+                else "peppol_schematron_validation_report.json"
+            )
+            result_path, result_hash = save_json("generated", f"{record.upload_id}_{filename}", result)
+            _mark_generated_file(record, filename, relative_storage_path(result_path), result_hash)
+
     report_path, report_hash = save_json("generated", f"{record.upload_id}_xml_validation_report.json", report)
     record.xml_validation_report_path = relative_storage_path(report_path)
     record.xml_validation_report = report

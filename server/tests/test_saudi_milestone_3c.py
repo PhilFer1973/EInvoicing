@@ -118,8 +118,6 @@ async def test_saudi_visual_pdf_falls_back_to_english_line_description(client: A
 async def test_saudi_evidence_bundle_contains_all_milestone_3c_outputs(client: AsyncClient) -> None:
     payload = await _upload_saudi_workbook(client)
     await _generate_saudi_outputs(client, payload["upload_id"])
-    acknowledgement = await client.post(f"/api/uploads/{payload['upload_id']}/acknowledge-boundaries")
-    assert acknowledgement.status_code == 200
 
     response = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
 
@@ -153,6 +151,7 @@ async def test_saudi_evidence_bundle_contains_all_milestone_3c_outputs(client: A
         evidence = json.loads(archive.read("evidence.json"))
         assert evidence["generated_at"]
         assert evidence["validation"]["internal_validation"] == "passed"
+        assert evidence["warning_acknowledgement"]["required_rule_ids"] == []
         assert evidence["warning_acknowledgement"]["acknowledged"] is True
         assert evidence["official_artefact_validation"]["status"] == "not_configured"
         assert "no ZATCA SDK validation" in evidence["official_artefact_validation"]["note"]
@@ -165,18 +164,14 @@ async def test_saudi_evidence_bundle_contains_all_milestone_3c_outputs(client: A
         }
 
 
-async def test_saudi_generated_bundle_requires_boundary_acknowledgement(client: AsyncClient) -> None:
+async def test_saudi_generated_bundle_downloads_without_boundary_acknowledgement(client: AsyncClient) -> None:
     payload = await _upload_saudi_workbook(client)
     await _generate_saudi_outputs(client, payload["upload_id"])
 
-    blocked = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
-    assert blocked.status_code == 409
-    assert "Acknowledge the V1 boundary warnings" in blocked.text
+    response = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
 
-    acknowledged = await client.post(f"/api/uploads/{payload['upload_id']}/acknowledge-boundaries")
-    assert acknowledged.status_code == 200
-    assert acknowledged.json()["acknowledged_warning_rule_ids"]
-    assert acknowledged.json()["warning_acknowledged_at"]
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
 
 
 async def test_saudi_generation_remains_blocked_by_validation_errors(client: AsyncClient) -> None:

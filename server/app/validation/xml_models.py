@@ -26,6 +26,8 @@ class XMLValidatorResult(BaseModel):
     informational_messages: list[str] = Field(default_factory=list)
     executed_at: str
     artefact_version: str | None = None
+    artefact_path: str | None = None
+    validator_executed: bool = False
     raw_output_path: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -34,4 +36,3 @@ class XMLValidationReport(BaseModel):
     overall_status: Literal["passed", "failed", "warning"]
     executed_at: str
     results: list[XMLValidatorResult] = Field(default_factory=list)
-

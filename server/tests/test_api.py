@@ -96,7 +96,7 @@ async def test_upload_valid_workbook_builds_canonical_json(client: AsyncClient) 
     payload = response.json()
     assert payload["canonical_invoice"]["invoice"]["invoice_number"] == "INV-SA-2026-001"
     assert payload["validation_report"]["summary"]["official_artefact_validation"] == "not_configured"
-    assert payload["validation_report"]["summary"]["warnings_ack_required"] >= 1
+    assert payload["validation_report"]["summary"]["warnings_ack_required"] == 0
     assert payload["evidence_bundle_preview"]["status"] == "skeleton_only_milestone_1"
 
 

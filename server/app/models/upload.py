@@ -60,6 +60,7 @@ class ExternalSandboxSendRecord(BaseModel):
 class UploadRecord(BaseModel):
     upload_id: str
     original_filename: str
+    uploaded_at: str | None = None
     selected_country_pack: str
     selected_output_profile: str | None = None
     workbook_sha256_hash: str

@@ -29,9 +29,8 @@ def official_validation_note(country_pack_id: str) -> str:
     """Return a deliberately conservative official validation statement."""
     if country_pack_id == "belgium_peppol":
         return (
-            "Official artefact validation not configured. Generated only: no UBL XSD, "
-            "EN 16931 or Peppol Schematron validation has run, and no Peppol "
-            "transmission has occurred."
+            "Official XML validator status is recorded per validator under official_xml_validator_status. "
+            "No Peppol transmission, recipient acceptance or SMP registration has occurred."
         )
     if country_pack_id == "saudi_zatca":
         return (
@@ -170,15 +169,44 @@ def _official_xml_validator_status(record: UploadRecord) -> dict[str, Any]:
             if result.validator_type in {"ubl_xsd", "en16931", "peppol_schematron"}
         ]
     if official_results:
+        statuses = {result["validator_type"]: result["status"] for result in official_results}
+        ran = {result["validator_type"]: bool(result.get("validator_executed")) for result in official_results}
         return {
-            "status": "not_configured",
+            "status": _official_overall_status(official_results),
+            "ubl_xsd_validation_status": statuses.get("ubl_xsd", "not_configured"),
+            "en16931_validation_status": statuses.get("en16931", "not_configured"),
+            "peppol_schematron_validation_status": statuses.get("peppol_schematron", "not_configured"),
+            "ubl_xsd_validation_ran": ran.get("ubl_xsd", False),
+            "en16931_validation_ran": ran.get("en16931", False),
+            "peppol_schematron_validation_ran": ran.get("peppol_schematron", False),
+            "official_validation_actually_ran": any(ran.values()),
             "validators": official_results,
-            "note": "Full EN16931/Peppol Schematron validation is not yet configured. Official validator not configured in this milestone.",
+            "note": _official_note(official_results),
         }
     return {
         "status": "not_configured",
-        "note": "Official validator not configured in this milestone.",
+        "official_validation_actually_ran": False,
+        "note": "Official validator artefact not configured.",
     }
+
+
+def _official_overall_status(results: list[dict[str, Any]]) -> str:
+    statuses = [result["status"] for result in results]
+    if any(status == "failed" for status in statuses):
+        return "failed"
+    if any(status == "warning" for status in statuses):
+        return "warning"
+    if all(status == "passed" for status in statuses):
+        return "passed"
+    if any(status == "passed" for status in statuses):
+        return "partially_configured"
+    return "not_configured"
+
+
+def _official_note(results: list[dict[str, Any]]) -> str:
+    if any(result["status"] in {"passed", "failed", "warning"} for result in results):
+        return "Official validator status reflects only configured artefacts that actually ran. No Peppol delivery, recipient acceptance or SMP registration is claimed."
+    return "Official validator artefact not configured."
 
 
 def _external_sandbox_send_metadata(record: UploadRecord) -> dict[str, Any]:

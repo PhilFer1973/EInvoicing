@@ -2,11 +2,9 @@ import { Archive, Code2, Download, ExternalLink, FileText, ListChecks, Send, Spa
 import { useEffect, useState } from "react";
 
 import {
-  acknowledgeBoundaryWarnings,
   canonicalInvoiceDownloadUrl,
   canonicalInvoiceUrl,
   evidenceBundleDownloadUrl,
-  fetchEInvoiceBEConfiguration,
   fetchStorecoveSandboxConfiguration,
   fetchGeneratedQrPayloadDecoded,
   generateOutput,
@@ -17,14 +15,12 @@ import {
   generatedQrUrl,
   generatedXmlDownloadUrl,
   generatedXmlUrl,
-  sendToEInvoiceBESandbox,
   sendToStorecoveSandbox,
   validateUploadPipeline
 } from "../services/api";
 import type {
   CountryPack,
   DecodedQrPayload,
-  EInvoiceBEConfigurationStatus,
   ExternalValidationRecord,
   StorecoveConfigurationStatus,
   UploadRecord,
@@ -55,26 +51,17 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(uploadRecord?.validation_report ?? null);
   const [isValidating, setIsValidating] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isSendingEInvoiceBE, setIsSendingEInvoiceBE] = useState(false);
-  const [isAcknowledging, setIsAcknowledging] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [validationPipelineAttempted, setValidationPipelineAttempted] = useState(false);
   const [generationError, setGenerationError] = useState("");
   const [storecoveConfig, setStorecoveConfig] = useState<StorecoveConfigurationStatus | null>(null);
-  const [eInvoiceBEConfig, setEInvoiceBEConfig] = useState<EInvoiceBEConfigurationStatus | null>(null);
-  const isBelgiumPack = pack?.country_pack_id === "belgium_peppol";
   const isSaudiPack = pack?.country_pack_id === "saudi_zatca";
   const isUkPack = pack?.country_pack_id === "uk_info";
-  const acknowledgementRequired = isSaudiPack && (validationReport?.summary.warnings_ack_required ?? 0) > 0;
-  const acknowledgementComplete = Boolean(uploadRecord?.acknowledged_warning_rule_ids?.length);
   const generationSupported = pack?.country_pack_id === "belgium_peppol" || isSaudiPack;
   const storecoveActionSupported = isUkPack && Boolean(pack?.sandbox_test_available_when_configured);
-  const externalValidationPassed = uploadRecord?.external_validation?.status === "passed" && uploadRecord.external_validation.is_valid === true;
-  const eInvoiceBESenderMatchesTenant = eInvoiceBESellerMatchesTenant(uploadRecord, eInvoiceBEConfig);
   const canExportZip =
     Boolean(uploadRecord?.evidence_bundle_preview.files.length) &&
-    !hasRegimeMismatch &&
-    (!acknowledgementRequired || acknowledgementComplete);
+    !hasRegimeMismatch;
   const canGenerate =
     generationSupported &&
     Boolean(uploadRecord?.canonical_invoice) &&
@@ -86,14 +73,6 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
     !hasRegimeMismatch &&
     (validationReport?.summary.blocking_errors ?? 1) === 0 &&
     Boolean(storecoveConfig?.configured);
-  const canSendEInvoiceBESandbox =
-    isBelgiumPack &&
-    Boolean(uploadRecord?.generated_xml_path) &&
-    !hasRegimeMismatch &&
-    (validationReport?.summary.blocking_errors ?? 1) === 0 &&
-    externalValidationPassed &&
-    eInvoiceBESenderMatchesTenant &&
-    Boolean(eInvoiceBEConfig?.configured);
   const generateTitle =
     isUkPack
       ? storecoveConfig?.message ?? "Storecove sandbox is not configured. Add sandbox credentials to enable UK Peppol testing."
@@ -106,14 +85,6 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
         : "Generation is not configured for this country pack.";
   const actionLabel = "Generate";
   const isActionEnabled = isUkPack ? canSendStorecoveSandbox : canGenerate;
-  const eInvoiceBESendTitle = eInvoiceBESandboxSendTitle({
-    config: eInvoiceBEConfig,
-    externalValidationPassed,
-    hasXml: Boolean(uploadRecord?.generated_xml_path),
-    senderMatchesTenant: eInvoiceBESenderMatchesTenant,
-    uploadRecord,
-    validationBlockingErrors: validationReport?.summary.blocking_errors ?? 1
-  });
 
   useEffect(() => {
     setLocalUploadRecord(incomingUploadRecord);
@@ -122,7 +93,6 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
     setGenerationError("");
     setIsExporting(false);
     setValidationPipelineAttempted(false);
-    setIsSendingEInvoiceBE(false);
   }, [incomingUploadRecord?.upload_id]);
 
   useEffect(() => {
@@ -161,39 +131,6 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
       active = false;
     };
   }, [isUkPack]);
-
-  useEffect(() => {
-    let active = true;
-    if (!isBelgiumPack || !externalValidationPassed) {
-      setEInvoiceBEConfig(null);
-      return () => {
-        active = false;
-      };
-    }
-
-    void fetchEInvoiceBEConfiguration()
-      .then((config) => {
-        if (active) setEInvoiceBEConfig(config);
-      })
-      .catch(() => {
-        if (active) {
-          setEInvoiceBEConfig({
-            enabled: false,
-            configured: false,
-            api_base_url: "https://api.e-invoice.be",
-            sandbox_company_number: "",
-            sandbox_peppol_id: "",
-            missing_fields: [],
-            mode: "disabled",
-            message: "e-invoice.be sandbox send is not configured. Add API credentials to enable sandbox send."
-          });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [externalValidationPassed, isBelgiumPack]);
 
   async function handleValidate() {
     if (!uploadRecord) return;
@@ -250,37 +187,6 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
       setGenerationError(error instanceof Error ? error.message : "Storecove sandbox test failed");
     } finally {
       setIsGenerating(false);
-    }
-  }
-
-  async function handleEInvoiceBESandboxSend() {
-    if (!uploadRecord || !canSendEInvoiceBESandbox) return;
-    setIsSendingEInvoiceBE(true);
-    setGenerationError("");
-    try {
-      const record = await sendToEInvoiceBESandbox(uploadRecord.upload_id);
-      setLocalUploadRecord(record);
-      onUploadRecordChange?.(record);
-      setDetailView("outputs");
-    } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : "e-invoice.be sandbox send failed");
-    } finally {
-      setIsSendingEInvoiceBE(false);
-    }
-  }
-
-  async function handleAcknowledge() {
-    if (!uploadRecord || acknowledgementComplete) return;
-    setIsAcknowledging(true);
-    setGenerationError("");
-    try {
-      const record = await acknowledgeBoundaryWarnings(uploadRecord.upload_id);
-      setLocalUploadRecord(record);
-      onUploadRecordChange?.(record);
-    } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : "Could not acknowledge the Saudi V1 boundary");
-    } finally {
-      setIsAcknowledging(false);
     }
   }
 
@@ -344,36 +250,6 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
           {isGenerating ? (isUkPack ? "Sending" : "Generating") : actionLabel}
         </button>
         {generationError ? <p className="action-error">{generationError}</p> : null}
-        {isBelgiumPack ? (
-          <button
-            aria-busy={isSendingEInvoiceBE}
-            className={`button-primary action-button action-command-button ${isSendingEInvoiceBE ? "is-processing" : ""}`}
-            disabled={!canSendEInvoiceBESandbox || isSendingEInvoiceBE}
-            onClick={() => void handleEInvoiceBESandboxSend()}
-            title={eInvoiceBESendTitle}
-            type="button"
-          >
-            <Send aria-hidden="true" size={17} />
-            {isSendingEInvoiceBE ? "Sending" : "Send to e-invoice.be sandbox"}
-          </button>
-        ) : null}
-        {acknowledgementRequired ? (
-          <label className="acknowledgement v1-boundary-acknowledgement">
-            <input
-              checked={acknowledgementComplete}
-              disabled={acknowledgementComplete || isAcknowledging}
-              onChange={(event) => {
-                if (event.target.checked) void handleAcknowledge();
-              }}
-              type="checkbox"
-            />
-            <span>
-              {acknowledgementComplete
-                ? "Saudi V1 boundary acknowledged."
-                : "Acknowledge: generated only, not submitted, cleared or production-signed."}
-            </span>
-          </label>
-        ) : null}
         {uploadRecord && canExportZip ? (
           <a
             aria-busy={isExporting}
@@ -658,9 +534,8 @@ function ValidationDetails({
   }
   const externalValidation = uploadRecord?.external_validation ?? null;
   const xmlValidationResults = uploadRecord?.xml_validation_report?.results ?? [];
-  const officialXmlValidatorResults = xmlValidationResults.filter((result) =>
-    ["ubl_xsd", "en16931", "peppol_schematron"].includes(result.validator_type)
-  );
+  const isBelgiumValidation = uploadRecord?.selected_country_pack === "belgium_peppol";
+  const internalResults = report.results.filter((result) => result.layer !== "country_boundary");
 
   return (
     <div className="modal-stack">
@@ -679,7 +554,7 @@ function ValidationDetails({
           </div>
         ) : null}
         <div className="validation-result-list">
-          {report.results.map((result, index) => (
+          {internalResults.map((result, index) => (
             <article className={`validation-result-item ${result.severity}`} key={`${result.rule_id}-${index}`}>
               <strong>{result.rule_id}</strong>
               <span>{result.status.replaceAll("_", " ")}</span>
@@ -689,67 +564,76 @@ function ValidationDetails({
           ))}
         </div>
       </section>
-      <section className="validation-detail-group">
-        <h4>XML generation for validation</h4>
-        <article className={`validation-result-item ${xmlGenerationTone(uploadRecord, report, pipelineAttempted)}`}>
-          <strong>{xmlGenerationStatusLabel(uploadRecord, report, pipelineAttempted)}</strong>
-          <span>{xmlGenerationStatusDetail(uploadRecord, report, pipelineAttempted)}</span>
-          <p>{xmlGenerationStatusMessage(uploadRecord, report, pipelineAttempted)}</p>
-        </article>
-      </section>
-      <section className="validation-detail-group">
-        <h4>XML well-formedness</h4>
-        <XMLValidationLayerCard
-          result={xmlValidationResults.find((result) => result.validator_type === "xml_well_formedness") ?? null}
-          fallback="XML well-formedness validation runs after Belgium XML is generated."
-        />
-      </section>
-      <section className="validation-detail-group">
-        <h4>UBL structure checks</h4>
-        <XMLValidationLayerCard
-          result={xmlValidationResults.find((result) => result.validator_type === "ubl_structure") ?? null}
-          fallback="Basic UBL structure checks run after XML well-formedness passes."
-        />
-      </section>
-      <section className="validation-detail-group">
-        <h4>Peppol readiness checks</h4>
-        <XMLValidationLayerCard
-          result={xmlValidationResults.find((result) => result.validator_type === "peppol_readiness") ?? null}
-          fallback="Peppol readiness checks run after XML well-formedness passes."
-        />
-      </section>
-      <section className="validation-detail-group">
-        <h4>External sandbox validation</h4>
-        <article className={`validation-result-item ${externalValidationTone(externalValidation)}`}>
-          <strong>{externalValidationStatusTitle(externalValidation)}</strong>
-          <span>{externalValidation?.status?.replaceAll("_", " ") ?? "not run"}</span>
-          <p>{externalValidationStatusMessage(externalValidation)}</p>
-          <small>External sandbox validation only. This does not prove Peppol delivery or final statutory compliance.</small>
-          {externalValidation?.status === "failed" && externalValidation.messages.length ? (
-            <ul className="external-validation-messages in-validation-details">
-              {uniqueMessages(externalValidation.messages).map((message, index) => (
-                <li key={`${message}-${index}`}>{message}</li>
-              ))}
-            </ul>
-          ) : null}
-        </article>
-      </section>
-      <section className="validation-detail-group">
-        <h4>Official validator status</h4>
-        {officialXmlValidatorResults.length ? (
-          <div className="validation-result-list compact-validation-list">
-            {officialXmlValidatorResults.map((result) => (
-              <XMLValidationLayerCard key={result.validator_type} result={result} fallback="" />
-            ))}
-          </div>
-        ) : (
-          <article className="validation-result-item warning">
-            <strong>Official validator not configured</strong>
-            <span>not configured</span>
-            <p>Official validator not configured in this milestone.</p>
-          </article>
-        )}
-      </section>
+      {isBelgiumValidation ? (
+        <>
+          <section className="validation-detail-group">
+            <h4>XML generation for validation</h4>
+            <article className={`validation-result-item ${xmlGenerationTone(uploadRecord, report, pipelineAttempted)}`}>
+              <strong>{xmlGenerationStatusLabel(uploadRecord, report, pipelineAttempted)}</strong>
+              <span>{xmlGenerationStatusDetail(uploadRecord, report, pipelineAttempted)}</span>
+              <p>{xmlGenerationStatusMessage(uploadRecord, report, pipelineAttempted)}</p>
+            </article>
+          </section>
+          <section className="validation-detail-group">
+            <h4>XML well-formedness</h4>
+            <XMLValidationLayerCard
+              result={xmlValidationResults.find((result) => result.validator_type === "xml_well_formedness") ?? null}
+              fallback="XML well-formedness validation runs after Belgium XML is generated."
+            />
+          </section>
+          <section className="validation-detail-group">
+            <h4>UBL structure checks</h4>
+            <XMLValidationLayerCard
+              result={xmlValidationResults.find((result) => result.validator_type === "ubl_structure") ?? null}
+              fallback="Basic UBL structure checks run after XML well-formedness passes."
+            />
+          </section>
+          <section className="validation-detail-group">
+            <h4>Peppol readiness checks</h4>
+            <XMLValidationLayerCard
+              result={xmlValidationResults.find((result) => result.validator_type === "peppol_readiness") ?? null}
+              fallback="Peppol readiness checks run after XML well-formedness passes."
+            />
+          </section>
+          <section className="validation-detail-group">
+            <h4>UBL XSD validation</h4>
+            <XMLValidationLayerCard
+              result={xmlValidationResults.find((result) => result.validator_type === "ubl_xsd") ?? null}
+              fallback="Official validator artefact not configured."
+            />
+          </section>
+          <section className="validation-detail-group">
+            <h4>EN16931 validation</h4>
+            <XMLValidationLayerCard
+              result={xmlValidationResults.find((result) => result.validator_type === "en16931") ?? null}
+              fallback="Official validator artefact not configured."
+            />
+          </section>
+          <section className="validation-detail-group">
+            <h4>Peppol Schematron validation</h4>
+            <XMLValidationLayerCard
+              result={xmlValidationResults.find((result) => result.validator_type === "peppol_schematron") ?? null}
+              fallback="Official validator artefact not configured."
+            />
+          </section>
+          <section className="validation-detail-group">
+            <h4>External sandbox validation</h4>
+            <article className={`validation-result-item ${externalValidationTone(externalValidation)}`}>
+              <strong>{externalValidationStatusTitle(externalValidation)}</strong>
+              <span>{externalValidation?.status?.replaceAll("_", " ") ?? "not run"}</span>
+              <p>{externalValidationStatusMessage(externalValidation)}</p>
+              <small>External sandbox validation only. This does not prove Peppol delivery or final statutory compliance.</small>
+              {externalValidation?.status === "failed" && externalValidation.messages.length ? (
+                <ul className="external-validation-messages in-validation-details">
+                  {uniqueMessages(externalValidation.messages).map((message, index) => (
+                    <li key={`${message}-${index}`}>{message}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </article>
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -883,44 +767,6 @@ function formatBoolean(value: boolean | null | undefined): string {
   if (value === true) return "yes";
   if (value === false) return "no";
   return "not checked";
-}
-
-function eInvoiceBESandboxSendTitle({
-  config,
-  externalValidationPassed,
-  hasXml,
-  senderMatchesTenant,
-  uploadRecord,
-  validationBlockingErrors
-}: {
-  config: EInvoiceBEConfigurationStatus | null;
-  externalValidationPassed: boolean;
-  hasXml: boolean;
-  senderMatchesTenant: boolean;
-  uploadRecord: UploadRecord | null;
-  validationBlockingErrors: number;
-}): string {
-  if (!uploadRecord) return "Upload and validate a Belgium workbook before sandbox send.";
-  if (validationBlockingErrors > 0) return "Internal validation must pass before e-invoice.be sandbox send.";
-  if (!hasXml) return "Belgium XML must be generated before e-invoice.be sandbox send.";
-  if (!externalValidationPassed) return "External e-invoice.be sandbox validation must pass before sandbox send.";
-  if (!config) return "Checking e-invoice.be sandbox configuration.";
-  if (!config.configured) return "e-invoice.be sandbox send is not configured. Add API credentials to enable sandbox send.";
-  if (!senderMatchesTenant) return "Sandbox send requires configured sender metadata to match the e-invoice.be tenant-owned sender Peppol ID.";
-  return "Sandbox send only. This does not prove Peppol delivery, recipient acceptance or final statutory compliance.";
-}
-
-function eInvoiceBESellerMatchesTenant(uploadRecord: UploadRecord | null, config: EInvoiceBEConfigurationStatus | null): boolean {
-  if (!uploadRecord?.canonical_invoice || !config?.sandbox_peppol_id) return false;
-  const sellerPeppolId = uploadRecord.canonical_invoice.seller.einvoicebe_sender_peppol_id;
-  if (sellerPeppolId === undefined || sellerPeppolId === null) return false;
-  return normalisePeppolId(String(sellerPeppolId)) === normalisePeppolId(config.sandbox_peppol_id);
-}
-
-function normalisePeppolId(value: string): string {
-  const [scheme, identifier] = value.split(":", 2);
-  if (!scheme || !identifier) return value.trim();
-  return `${scheme.trim()}:${identifier.trim()}`;
 }
 
 function xmlGenerationTone(uploadRecord: UploadRecord | null, report: ValidationReport, pipelineAttempted: boolean): string {

@@ -48,6 +48,10 @@ class CountryAdapter:
             files.extend(
                 [
                     EvidenceFile(filename="xml_validation_report.json", status="pending_xml_validation"),
+                    EvidenceFile(filename="en16931_validation_report.json", status="pending_official_validation"),
+                    EvidenceFile(filename="peppol_schematron_validation_report.json", status="pending_official_validation"),
+                    EvidenceFile(filename="en16931_validation_raw.svrl", status="pending_official_validation"),
+                    EvidenceFile(filename="peppol_schematron_validation_raw.svrl", status="pending_official_validation"),
                     EvidenceFile(filename="einvoicebe_validation_request.json", status="pending_external_validation"),
                     EvidenceFile(filename="einvoicebe_validation_response.json", status="pending_external_validation"),
                     EvidenceFile(filename="external_validation_status.json", status="pending_external_validation"),

@@ -23,34 +23,28 @@ describe("ReviewExportPanel", () => {
     expect(screen.getByRole("button", { name: "Generate" })).toBeEnabled();
   });
 
-  it("requires Saudi V1 boundary acknowledgement before evidence export", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          ...validSaudiUpload,
-          acknowledged_warning_rule_ids: ["SA-BOUNDARY-001"],
-          warning_acknowledged_at: "2026-06-26T17:00:00+00:00"
-        }),
-        { status: 200 }
-      )
-    );
+  it("does not show a Saudi boundary acknowledgement label in the right panel", () => {
+    render(<ReviewExportPanel pack={saudiPack} uploadRecord={validSaudiUpload} onUploadRecordChange={vi.fn()} />);
+
+    expect(screen.queryByText(/Acknowledge:/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Export ZIP" })).toBeInTheDocument();
+  });
+
+  it("shows country-specific Saudi validation details without Belgium XML layers", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(validSaudiUpload), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    function StatefulPanel() {
-      const [record, setRecord] = useState(validSaudiUpload);
-      return <ReviewExportPanel pack={saudiPack} uploadRecord={record} onUploadRecordChange={setRecord} />;
-    }
+    render(<ReviewExportPanel pack={saudiPack} uploadRecord={validSaudiUpload} onUploadRecordChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Validate" }));
 
-    render(<StatefulPanel />);
-    expect(screen.getByRole("button", { name: "Export ZIP" })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Validation Details" })).toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Internal validation" })).toBeInTheDocument();
+    expect(screen.queryByText("SA-V1-BOUNDARY-001")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "XML well-formedness" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Peppol readiness checks" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "External sandbox validation" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("checkbox"));
-
-    await waitFor(() => expect(screen.getByRole("link", { name: "Export ZIP" })).toBeInTheDocument());
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/api/uploads/UP-SA-VALID/acknowledge-boundaries",
-      { method: "POST" }
-    );
     vi.unstubAllGlobals();
   });
 
@@ -183,13 +177,15 @@ describe("ReviewExportPanel", () => {
     expect(screen.getByRole("heading", { name: "XML well-formedness" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "UBL structure checks" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Peppol readiness checks" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "UBL XSD validation" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "EN16931 validation" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Peppol Schematron validation" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "External sandbox validation" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Official validator status" })).toBeInTheDocument();
     expect(screen.getByText("Belgium XML was generated from canonical invoice JSON for validation/output evidence.")).toBeInTheDocument();
     expect(screen.getByText("Generated XML is well-formed.")).toBeInTheDocument();
     expect(screen.getByText("Basic UBL invoice structure checks passed.")).toBeInTheDocument();
     expect(screen.getByText("Peppol readiness checks passed.")).toBeInTheDocument();
-    expect(screen.getAllByText("Official validator not configured in this milestone.")).toHaveLength(3);
+    expect(screen.getAllByText("Official validator artefact not configured.")).toHaveLength(3);
     expect(screen.getByText("generated")).toBeInTheDocument();
     expect(screen.getAllByText("External e-invoice.be sandbox validation not configured.").length).toBeGreaterThan(0);
     expect(screen.queryByText("Belgium XML generation for validation has not run.")).not.toBeInTheDocument();
@@ -317,7 +313,7 @@ describe("ReviewExportPanel", () => {
     vi.unstubAllGlobals();
   });
 
-  it("runs e-invoice.be sandbox send as a separate provider action after validation passes", async () => {
+  it("does not show a separate e-invoice.be sandbox send button in the Belgium action panel", () => {
     const validatedUpload: UploadRecord = {
       ...validBelgiumUpload,
       generated_xml_path: "server/storage/generated/UP-BE-VALID_belgium_peppol_invoice.xml",
@@ -356,143 +352,13 @@ describe("ReviewExportPanel", () => {
         ]
       }
     };
-    const sentUpload: UploadRecord = {
-      ...validatedUpload,
-      status: "einvoicebe_sandbox_send_submitted",
-      external_sandbox_send: {
-        provider: "e-invoice.be",
-        label: "External sandbox send",
-        status: "submitted",
-        submitted_at: "2026-06-30T10:00:00+00:00",
-        provider_reference: "DOC-SEND-001",
-        document_id: "DOC-SEND-001",
-        provider_document_state: "TRANSIT",
-        endpoint: "https://api.e-invoice.be/api/documents/DOC-SEND-001/send",
-        messages: ["Sandbox send submitted to e-invoice.be."],
-        sender_identity_check: {
-          tenant_owned_sender_peppol_id: "0208:099025170",
-          tenant_sender_scheme: "0208",
-          tenant_sender_id: "099025170",
-          xml_seller_endpoint_scheme: "0208",
-          xml_seller_endpoint_id: "099025170",
-          xml_seller_party_legal_company_id: "0990251719",
-          xml_seller_tax_scheme_company_id: "BE0990251719",
-          send_request_sender_source: "omitted_provider_tenant_inferred",
-          send_request_sender_scheme: null,
-          send_request_sender_id: null,
-          xml_sender_matches_tenant: true,
-          send_request_sender_matches_tenant: null
-        },
-        peppol_delivery: "not_claimed",
-        recipient_acceptance: "not_claimed",
-        smp_registration_claim: "not_claimed",
-        disclaimer: "Sandbox send only. This does not prove Peppol delivery, recipient acceptance or final statutory compliance."
-      },
-      evidence_bundle_preview: {
-        ...validatedUpload.evidence_bundle_preview,
-        files: [
-          ...validatedUpload.evidence_bundle_preview.files,
-          { filename: "einvoicebe_send_response.json", status: "stored", sha256: "send-response-hash", storage_path: "generated/send-response.json" }
-        ]
-      }
-    };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            enabled: true,
-            configured: true,
-            api_base_url: "https://api.e-invoice.be",
-            sandbox_company_number: "099025170",
-            sandbox_peppol_id: "0208:099025170",
-            missing_fields: [],
-            mode: "sandbox_validation",
-            message: "e-invoice.be sandbox validation is configured."
-          }),
-          { status: 200 }
-        )
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify(sentUpload), { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    function StatefulPanel() {
-      const [record, setRecord] = useState(validatedUpload);
-      return <ReviewExportPanel pack={belgiumPack} uploadRecord={record} onUploadRecordChange={setRecord} />;
-    }
-
-    render(<StatefulPanel />);
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("http://localhost:8000/api/uploads/einvoicebe/configuration", undefined));
-    expect(screen.getByRole("button", { name: "Send to e-invoice.be sandbox" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Send to e-invoice.be sandbox" }));
-
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Generated Outputs" })).toBeInTheDocument());
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/api/uploads/UP-BE-VALID/einvoicebe-sandbox-send",
-      { method: "POST" }
-    );
-    expect(screen.getByText("External sandbox send")).toBeInTheDocument();
-    expect(screen.getByText("Sandbox send submitted")).toBeInTheDocument();
-    expect(screen.getByText("Sandbox send only. This does not prove Peppol delivery, recipient acceptance or final statutory compliance.")).toBeInTheDocument();
-    expect(screen.getByText("Sandbox sender identity check")).toBeInTheDocument();
-    expect(screen.getByText("Tenant 0208:099025170")).toBeInTheDocument();
-    expect(screen.getByText("XML 0208:099025170")).toBeInTheDocument();
-    expect(screen.getByText("Request -:-")).toBeInTheDocument();
-    expect(screen.getByText("XML sender match: yes. Send request match: not checked.")).toBeInTheDocument();
-
-    vi.unstubAllGlobals();
-  });
-
-  it("keeps e-invoice.be sandbox send disabled when the invoice seller is not tenant-owned", async () => {
-    const validatedUpload: UploadRecord = {
-      ...validBelgiumUpload,
-      generated_xml_path: "server/storage/generated/UP-BE-VALID_belgium_peppol_invoice.xml",
-      generated_xml_sha256_hash: "xml-hash",
-      external_validation: {
-        provider: "e-invoice.be",
-        label: "External sandbox validation",
-        status: "passed",
-        is_valid: true,
-        reference: "EINVBE-VALID-001",
-        validated_at: "2026-06-29T12:00:00+00:00",
-        issue_count: 0,
-        messages: [],
-        endpoint: "https://api.e-invoice.be/api/validate/ubl",
-        peppol_delivery: "not_delivered",
-        recipient_acceptance: "not_requested",
-        smp_registration_claim: "not_claimed",
-        disclaimer: "External sandbox validation only. This does not prove Peppol delivery or final statutory compliance."
-      }
-    };
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          enabled: true,
-          configured: true,
-          api_base_url: "https://api.e-invoice.be",
-          sandbox_company_number: "099025170",
-          sandbox_peppol_id: "0208:099025170",
-          missing_fields: [],
-          mode: "sandbox_validation",
-          message: "e-invoice.be sandbox validation is configured."
-        }),
-        { status: 200 }
-      )
-    );
-    vi.stubGlobal("fetch", fetchMock);
 
     render(<ReviewExportPanel pack={belgiumPack} uploadRecord={validatedUpload} onUploadRecordChange={vi.fn()} />);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("http://localhost:8000/api/uploads/einvoicebe/configuration", undefined));
-    const button = screen.getByRole("button", { name: "Send to e-invoice.be sandbox" });
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute(
-      "title",
-      "Sandbox send requires configured sender metadata to match the e-invoice.be tenant-owned sender Peppol ID."
-    );
-
-    vi.unstubAllGlobals();
+    expect(screen.getByRole("button", { name: "Validate" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Generate" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "Export ZIP" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send to e-invoice.be sandbox" })).not.toBeInTheDocument();
   });
 });
 
@@ -562,11 +428,11 @@ const validSaudiUpload: UploadRecord = {
   },
   validation_report: {
     summary: {
-      overall_status: "passed_with_warnings",
-      internal_validation: "passed_with_warnings",
+      overall_status: "passed",
+      internal_validation: "passed",
       official_artefact_validation: "not_configured",
       blocking_errors: 0,
-      warnings_ack_required: 6,
+      warnings_ack_required: 0,
       warnings: 0,
       passed_checks: 8
     },
@@ -828,9 +694,11 @@ const validBelgiumXmlValidationReport = {
       status: "not_configured",
       errors: [],
       warnings: [],
-      informational_messages: ["Official validator not configured in this milestone."],
+      informational_messages: ["Official validator artefact not configured."],
       executed_at: "2026-06-30T12:00:00+00:00",
       artefact_version: null,
+      artefact_path: null,
+      validator_executed: false,
       raw_output_path: null,
       metadata: {}
     },
@@ -840,9 +708,11 @@ const validBelgiumXmlValidationReport = {
       status: "not_configured",
       errors: [],
       warnings: [],
-      informational_messages: ["Official validator not configured in this milestone."],
+      informational_messages: ["Official validator artefact not configured."],
       executed_at: "2026-06-30T12:00:00+00:00",
       artefact_version: null,
+      artefact_path: null,
+      validator_executed: false,
       raw_output_path: null,
       metadata: {}
     },
@@ -852,9 +722,11 @@ const validBelgiumXmlValidationReport = {
       status: "not_configured",
       errors: [],
       warnings: [],
-      informational_messages: ["Official validator not configured in this milestone."],
+      informational_messages: ["Official validator artefact not configured."],
       executed_at: "2026-06-30T12:00:00+00:00",
       artefact_version: null,
+      artefact_path: null,
+      validator_executed: false,
       raw_output_path: null,
       metadata: {}
     }

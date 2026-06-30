@@ -1,18 +1,35 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
 
 from app.validation.peppol_readiness import validate_basic_ubl_structure, validate_peppol_readiness
+from app.validation.schematron_runner import RawValidatorOutput, run_schematron_validator
+from app.validation.validator_config import SchematronValidatorConfig, load_belgium_schematron_validator_configs
 from app.validation.xml_models import XMLValidationMessage, XMLValidationReport, XMLValidatorResult
 
 
-OFFICIAL_VALIDATOR_NOT_CONFIGURED_MESSAGE = "Official validator not configured in this milestone."
+OFFICIAL_VALIDATOR_NOT_CONFIGURED_MESSAGE = "Official validator artefact not configured."
+
+
+@dataclass
+class XMLValidationExecution:
+    report: XMLValidationReport
+    raw_reports: list[RawValidatorOutput] = field(default_factory=list)
 
 
 def validate_belgium_invoice_xml(xml_bytes: bytes) -> XMLValidationReport:
+    return run_belgium_xml_validation(xml_bytes).report
+
+
+def run_belgium_xml_validation(
+    xml_bytes: bytes,
+    schematron_configs: list[SchematronValidatorConfig] | None = None,
+) -> XMLValidationExecution:
     executed_at = _now()
     results: list[XMLValidatorResult] = []
+    raw_reports: list[RawValidatorOutput] = []
     well_formedness = validate_xml_well_formedness(xml_bytes)
     results.append(well_formedness)
 
@@ -24,12 +41,18 @@ def validate_belgium_invoice_xml(xml_bytes: bytes) -> XMLValidationReport:
         results.append(validate_basic_ubl_structure(root))
         results.append(validate_peppol_readiness(root))
 
-    results.extend(official_validator_statuses())
-    return XMLValidationReport(
+    results.append(_not_configured_result("UBL XSD validation", "ubl_xsd"))
+    for execution in official_validator_executions(xml_bytes, schematron_configs):
+        results.append(execution.result)
+        if execution.raw_output:
+            raw_reports.append(execution.raw_output)
+
+    report = XMLValidationReport(
         overall_status=_overall_status(results),
         executed_at=executed_at,
         results=results,
     )
+    return XMLValidationExecution(report=report, raw_reports=raw_reports)
 
 
 def validate_xml_well_formedness(xml_bytes: bytes) -> XMLValidatorResult:
@@ -64,12 +87,22 @@ def validate_xml_well_formedness(xml_bytes: bytes) -> XMLValidatorResult:
     )
 
 
-def official_validator_statuses() -> list[XMLValidatorResult]:
+def official_validator_statuses(
+    schematron_configs: list[SchematronValidatorConfig] | None = None,
+) -> list[XMLValidatorResult]:
+    configs = schematron_configs if schematron_configs is not None else load_belgium_schematron_validator_configs()
     return [
         _not_configured_result("UBL XSD validation", "ubl_xsd"),
-        _not_configured_result("EN16931 validation", "en16931"),
-        _not_configured_result("Peppol Schematron validation", "peppol_schematron"),
+        *[_not_configured_result(config.validator_name, config.validator_type) for config in configs],
     ]
+
+
+def official_validator_executions(
+    xml_bytes: bytes,
+    schematron_configs: list[SchematronValidatorConfig] | None = None,
+):
+    configs = schematron_configs if schematron_configs is not None else load_belgium_schematron_validator_configs()
+    return [run_schematron_validator(xml_bytes, config) for config in configs]
 
 
 def _skipped_result(validator_name: str, validator_type: str, message: str) -> XMLValidatorResult:
@@ -90,6 +123,7 @@ def _not_configured_result(validator_name: str, validator_type: str) -> XMLValid
         status="not_configured",
         informational_messages=[OFFICIAL_VALIDATOR_NOT_CONFIGURED_MESSAGE],
         executed_at=_now(),
+        validator_executed=False,
     )
 
 
@@ -103,4 +137,3 @@ def _overall_status(results: list[XMLValidatorResult]) -> str:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-

@@ -25,15 +25,15 @@ async def client() -> AsyncClient:
         yield api_client
 
 
-async def test_valid_saudi_sample_workbook_passes_with_boundary_warnings(client: AsyncClient) -> None:
+async def test_valid_saudi_sample_workbook_passes_without_boundary_validation_warnings(client: AsyncClient) -> None:
     payload = await _upload_saudi_workbook(client, saudi_valid_workbook_bytes())
 
     assert payload["status"] == "validated"
     assert payload["validation_report"]["summary"]["blocking_errors"] == 0
-    assert payload["validation_report"]["summary"]["overall_status"] == "passed_with_warnings"
-    assert payload["validation_report"]["summary"]["warnings_ack_required"] == 6
-    assert _has_failed_rule(payload, "SA-V1-BOUNDARY-001")
-    assert _has_failed_rule(payload, "SA-V1-BOUNDARY-006")
+    assert payload["validation_report"]["summary"]["overall_status"] == "passed"
+    assert payload["validation_report"]["summary"]["warnings_ack_required"] == 0
+    assert not _has_failed_rule(payload, "SA-V1-BOUNDARY-001")
+    assert not _has_failed_rule(payload, "SA-V1-BOUNDARY-006")
 
 
 async def test_selecting_saudi_and_uploading_belgium_workbook_is_regime_mismatch(client: AsyncClient) -> None:
@@ -213,8 +213,6 @@ async def test_generated_saudi_xml_contains_expected_values(client: AsyncClient)
 async def test_evidence_zip_includes_generated_saudi_xml_after_generation(client: AsyncClient) -> None:
     payload = await _upload_saudi_workbook(client, saudi_valid_workbook_bytes())
     await client.post(f"/api/uploads/{payload['upload_id']}/generate")
-    acknowledgement = await client.post(f"/api/uploads/{payload['upload_id']}/acknowledge-boundaries")
-    assert acknowledgement.status_code == 200
 
     response = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
 

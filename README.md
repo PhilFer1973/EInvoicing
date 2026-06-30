@@ -80,7 +80,7 @@ These checks are readiness checks only. Full UBL XSD validation, EN16931 validat
 Official validator not configured in this milestone.
 ```
 
-Milestone 6B is planned to add the full EN16931/Peppol Schematron validation layer. Milestone 6A does not prove Peppol delivery, recipient acceptance, SMP registration, or final statutory compliance.
+Milestone 6A does not prove Peppol delivery, recipient acceptance, SMP registration, or final statutory compliance.
 
 To demo the Belgium XML validation foundation:
 
@@ -89,6 +89,46 @@ To demo the Belgium XML validation foundation:
 3. Select **Validate**.
 4. Open **Validation Details** to see Internal validation, XML generation, XML well-formedness, UBL structure checks, Peppol readiness checks, external sandbox validation status, and official validator status.
 5. Export the evidence ZIP and inspect `xml_validation_report.json` and `evidence_metadata.json`.
+
+### Belgium EN16931 / Peppol Schematron Validation
+
+Milestone 6B adds a reusable Schematron/SVRL runner for Belgium EN16931 and Peppol BIS Billing 3.0 validation. This layer is disabled by default because the official/precompiled validator artefacts are not committed to this repository.
+
+Milestone 6B adds the official validator runner/reporting framework. In the current local setup, UBL XSD, EN16931 and Peppol Schematron artefacts are not configured, so those statuses remain Not Configured. No official validation pass is claimed.
+
+Expected artefact locations:
+
+```text
+validators/belgium_peppol/en16931/CEN-EN16931-UBL.xslt
+validators/belgium_peppol/peppol/PEPPOL-EN16931-UBL.xslt
+```
+
+Optional environment variables:
+
+```powershell
+EINVOICING_EN16931_VALIDATOR_ARTEFACT=validators/belgium_peppol/en16931/CEN-EN16931-UBL.xslt
+EINVOICING_PEPPOL_VALIDATOR_ARTEFACT=validators/belgium_peppol/peppol/PEPPOL-EN16931-UBL.xslt
+EINVOICING_SCHEMATRON_ENGINE_COMMAND="java -jar C:\path\to\saxon-he.jar -s:{xml} -xsl:{artefact} -o:{output}"
+EINVOICING_EN16931_VALIDATOR_VERSION=
+EINVOICING_PEPPOL_VALIDATOR_VERSION=
+```
+
+The runner writes concise JSON reports and preserves raw SVRL output where a validator actually runs:
+
+- `en16931_validation_report.json`
+- `peppol_schematron_validation_report.json`
+- `en16931_validation_raw.svrl`
+- `peppol_schematron_validation_raw.svrl`
+
+Status meanings:
+
+- `passed`: configured validator artefact executed and returned no failed assertions.
+- `failed`: configured validator executed and found issues, or execution/output parsing failed.
+- `warning`: configured validator executed and returned warning/report messages without failed assertions.
+- `skipped`: validation layer was not run because an earlier XML layer could not proceed.
+- `not_configured`: artefact or execution engine is not configured.
+
+The UI and evidence only show EN16931 or Peppol Schematron validation as passed when the configured artefact has actually run against the generated XML. These validator results still do not prove Peppol delivery, recipient acceptance, SMP registration or final statutory compliance.
 
 ### Optional e-invoice.be Sandbox Validation And Send
 
@@ -180,6 +220,43 @@ Storecove sandbox is not configured. Add sandbox credentials to enable UK Peppol
 ```
 
 Production Storecove endpoints are rejected in Milestone 5A. Storecove API keys are redacted from evidence files. The UK evidence bundle can include the workbook snapshot, canonical invoice, validation report, redacted `storecove_request.json`, `storecove_response.json`, `storecove_status.json`, `provider_reference.txt`, country-pack manifest, evidence metadata, hashes, and a sandbox-only README where available.
+
+## Audit Trail And Evidence Viewer
+
+Select **Audit Trail** in the top navigation to review prior local uploads and output runs. The page shows a workbench list with upload timestamp, invoice number, country/regime, seller, buyer, currency, gross amount, validation status, XML generation status, external sandbox validation status, sandbox send status and evidence bundle availability.
+
+Selecting a row opens the audit detail view. The detail view shows the source workbook filename, country pack/version, output profile, invoice summary, validation summary, generated outputs, XML validation summary, official validator status, external e-invoice.be validation status where applicable, e-invoice.be sandbox send status where applicable, Saudi QR/PDF output status where applicable, timestamps and hashes already held by the evidence metadata.
+
+The evidence viewer lists available evidence files such as:
+
+- `source_upload_snapshot.xlsx`
+- `canonical_invoice.json`
+- `validation_report.json`
+- `xml_validation_report.json`
+- `en16931_validation_report.json`
+- `peppol_schematron_validation_report.json`
+- `invoice.xml`
+- `einvoicebe_validation_request.json`
+- `einvoicebe_validation_response.json`
+- `einvoicebe_send_request.json`
+- `einvoicebe_send_response.json`
+- `external_validation_status.json`
+- `external_sandbox_send_status.json`
+- Saudi QR/PDF files where applicable
+- `evidence_metadata.json`
+- `hashes.txt`
+
+JSON, XML and text evidence can be previewed in the audit detail view. Binary files such as workbooks, QR images and PDFs are available through download actions. The evidence ZIP can also be downloaded again from the audit detail view. If a ZIP or file is not available, the UI shows that evidence is not available for the selected item.
+
+Status labels remain deliberately conservative:
+
+- `Generated only`: an output file was created locally.
+- `External sandbox validation`: a sandbox provider validation result, not Peppol delivery.
+- `Sandbox send attempted`: provider workflow evidence only.
+- `Official validator not configured`: UBL XSD, EN16931 or Peppol Schematron artefacts have not run.
+- `Not submitted`, `Not production-signed`, `No recipient acceptance claim`: no live authority or production delivery claim is made.
+
+Audit storage is local only. The backend persists a lightweight audit index under ignored `server/storage/` so local audit records can survive a server restart on the same machine. This is not a multi-user database, document management system or access-controlled archive.
 
 ## Checks
 

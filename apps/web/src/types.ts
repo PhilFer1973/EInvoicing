@@ -181,6 +181,8 @@ export interface XMLValidatorResult {
   informational_messages: string[];
   executed_at: string;
   artefact_version?: string | null;
+  artefact_path?: string | null;
+  validator_executed?: boolean;
   raw_output_path?: string | null;
   metadata?: Record<string, unknown>;
 }
@@ -239,12 +241,63 @@ export interface EInvoiceBEConfigurationStatus {
 }
 
 export interface AuditEntry {
-  generated_at: string;
+  upload_id: string;
+  uploaded_at: string | null;
+  generated_at: string | null;
+  original_filename: string;
   invoice_number: string | null;
   country_pack: string;
+  country_regime: string;
   output_profile: string | null;
-  status: string;
+  seller: string | null;
+  buyer: string | null;
+  currency: string | null;
+  gross_amount: string | null;
+  validation_status: string;
+  xml_generation_status: string;
+  external_validation_status: string;
+  sandbox_send_status: string;
+  evidence_bundle_available: boolean;
+  evidence_bundle_download_url: string | null;
   warnings: number;
   pack_version: string;
-  download_zip: string | null;
+}
+
+export interface AuditEvidenceFile {
+  filename: string;
+  status: string;
+  sha256: string | null;
+  content_type: string;
+  preview_available: boolean;
+  download_url: string | null;
+  preview_url: string | null;
+}
+
+export interface AuditDetail {
+  entry: AuditEntry;
+  source_upload_filename: string;
+  country_pack_version: string;
+  selected_output_profile: string | null;
+  invoice_summary: Record<string, unknown>;
+  validation_summary: Record<string, unknown>;
+  generated_outputs_summary: Array<Record<string, unknown>>;
+  xml_validation_summary: Record<string, unknown>;
+  official_validator_status: Record<string, unknown>;
+  external_validation: Record<string, unknown>;
+  sandbox_send: Record<string, unknown>;
+  saudi_outputs: Record<string, unknown>;
+  timestamps: Record<string, unknown>;
+  hashes: Record<string, unknown>;
+  evidence_metadata: Record<string, unknown>;
+  evidence_files: AuditEvidenceFile[];
+  evidence_bundle_download_url: string | null;
+}
+
+export interface EvidenceFilePreview {
+  filename: string;
+  content_type: string;
+  preview_available: boolean;
+  kind: "json" | "text" | "binary" | string;
+  content: unknown;
+  message: string | null;
 }

@@ -1,4 +1,5 @@
 import type {
+  AuditDetail,
   AuditEntry,
   CountryPack,
   CountryPackList,
@@ -6,7 +7,8 @@ import type {
   EInvoiceBEConfigurationStatus,
   StorecoveConfigurationStatus,
   UploadRecord,
-  ValidationReport
+  ValidationReport,
+  EvidenceFilePreview
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -25,6 +27,10 @@ export function canonicalInvoiceDownloadUrl(uploadId: string): string {
 
 export function evidenceBundleDownloadUrl(uploadId: string): string {
   return `${API_BASE_URL}/api/uploads/${uploadId}/evidence-bundle/download`;
+}
+
+export function auditEvidenceFileDownloadUrl(uploadId: string, filename: string): string {
+  return `${API_BASE_URL}/api/audit/${uploadId}/evidence-files/${encodeURIComponent(filename)}/download`;
 }
 
 export function generatedXmlUrl(uploadId: string): string {
@@ -135,4 +141,12 @@ export async function fetchGeneratedQrPayloadDecoded(uploadId: string): Promise<
 
 export async function fetchAuditEntries(): Promise<AuditEntry[]> {
   return request<AuditEntry[]>("/api/audit");
+}
+
+export async function fetchAuditDetail(uploadId: string): Promise<AuditDetail> {
+  return request<AuditDetail>(`/api/audit/${uploadId}`);
+}
+
+export async function fetchAuditEvidenceFilePreview(uploadId: string, filename: string): Promise<EvidenceFilePreview> {
+  return request<EvidenceFilePreview>(`/api/audit/${uploadId}/evidence-files/${encodeURIComponent(filename)}/preview`);
 }
