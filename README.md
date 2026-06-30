@@ -70,6 +70,26 @@ The **Export Template** button downloads a four-sheet starter workbook: `entitie
 
 The bundle contains the workbook snapshot, canonical invoice, validation report, Belgium XML, country-pack manifest, evidence metadata, and hashes.
 
+### Belgium XML Validation Foundation
+
+Milestone 6A adds reusable local XML validation for generated Belgium UBL XML. The main **Validate** pipeline now generates Belgium XML from canonical invoice JSON, checks XML well-formedness, runs basic UBL invoice structure checks, and runs Peppol-readiness checks for endpoint IDs, scheme IDs, buyer/order reference, VAT category/rate information and payable amount.
+
+These checks are readiness checks only. Full UBL XSD validation, EN16931 validation and Peppol Schematron validation are explicitly marked as:
+
+```text
+Official validator not configured in this milestone.
+```
+
+Milestone 6B is planned to add the full EN16931/Peppol Schematron validation layer. Milestone 6A does not prove Peppol delivery, recipient acceptance, SMP registration, or final statutory compliance.
+
+To demo the Belgium XML validation foundation:
+
+1. Select `Belgium / Peppol BIS Billing 3.0`.
+2. Upload `BE-VALID-001.xlsx` or `BE-EINVOICEBE-VALIDATION-001.xlsx`.
+3. Select **Validate**.
+4. Open **Validation Details** to see Internal validation, XML generation, XML well-formedness, UBL structure checks, Peppol readiness checks, external sandbox validation status, and official validator status.
+5. Export the evidence ZIP and inspect `xml_validation_report.json` and `evidence_metadata.json`.
+
 ### Optional e-invoice.be Sandbox Validation And Send
 
 Milestone 5B adds an optional Belgium-only external sandbox validation stage inside the main **Validate** pipeline. It generates Belgium UBL XML from canonical invoice JSON where needed, validates that XML with e-invoice.be when configured, and stores the provider response as evidence. It does not deliver through Peppol, prove recipient acceptance, prove SMP registration, or prove final statutory compliance.

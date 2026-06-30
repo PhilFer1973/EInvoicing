@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from app.models.canonical import CanonicalInvoice
 from app.models.validation import ValidationReport
+from app.validation.xml_models import XMLValidationReport
 
 
 class EvidenceFile(BaseModel):
@@ -68,6 +69,8 @@ class UploadRecord(BaseModel):
     validation_report_path: str | None = None
     generated_xml_path: str | None = None
     generated_xml_sha256_hash: str | None = None
+    xml_validation_report_path: str | None = None
+    xml_validation_report: XMLValidationReport | None = None
     generated_at: str | None = None
     storecove_provider_reference: str | None = None
     storecove_submission_status: str | None = None

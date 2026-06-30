@@ -99,6 +99,8 @@ def build_evidence_metadata(record: UploadRecord, country_pack: CountryPack) -> 
         },
         "generated_outputs": generated_outputs,
         "xml_generation_for_validation": _xml_generation_for_validation_metadata(record),
+        "xml_validation": _xml_validation_metadata(record),
+        "official_xml_validator_status": _official_xml_validator_status(record),
         "warning_acknowledgement": {
             "required_rule_ids": acknowledgement_rules,
             "acknowledged_rule_ids": acknowledged_rules,
@@ -139,6 +141,44 @@ def _external_validation_metadata(record: UploadRecord) -> dict[str, Any]:
             "disclaimer": "External sandbox validation only. This does not prove Peppol delivery or final statutory compliance.",
         }
     return {"status": "not_applicable"}
+
+
+def _xml_validation_metadata(record: UploadRecord) -> dict[str, Any]:
+    if record.xml_validation_report:
+        return record.xml_validation_report.model_dump(mode="json")
+    if record.selected_country_pack == "belgium_peppol":
+        if record.validation_report.summary.blocking_errors > 0:
+            return {
+                "overall_status": "skipped",
+                "message": "Belgium XML validation skipped because internal validation has blocking errors.",
+            }
+        return {
+            "overall_status": "not_run",
+            "message": "Belgium XML validation has not run.",
+        }
+    return {"overall_status": "not_applicable"}
+
+
+def _official_xml_validator_status(record: UploadRecord) -> dict[str, Any]:
+    if record.selected_country_pack != "belgium_peppol":
+        return {"status": "not_applicable"}
+    official_results = []
+    if record.xml_validation_report:
+        official_results = [
+            result.model_dump(mode="json")
+            for result in record.xml_validation_report.results
+            if result.validator_type in {"ubl_xsd", "en16931", "peppol_schematron"}
+        ]
+    if official_results:
+        return {
+            "status": "not_configured",
+            "validators": official_results,
+            "note": "Full EN16931/Peppol Schematron validation is not yet configured. Official validator not configured in this milestone.",
+        }
+    return {
+        "status": "not_configured",
+        "note": "Official validator not configured in this milestone.",
+    }
 
 
 def _external_sandbox_send_metadata(record: UploadRecord) -> dict[str, Any]:

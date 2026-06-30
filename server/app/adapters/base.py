@@ -47,6 +47,7 @@ class CountryAdapter:
         if self.pack.country_pack_id == "belgium_peppol":
             files.extend(
                 [
+                    EvidenceFile(filename="xml_validation_report.json", status="pending_xml_validation"),
                     EvidenceFile(filename="einvoicebe_validation_request.json", status="pending_external_validation"),
                     EvidenceFile(filename="einvoicebe_validation_response.json", status="pending_external_validation"),
                     EvidenceFile(filename="external_validation_status.json", status="pending_external_validation"),

@@ -52,6 +52,7 @@ from app.services.upload_store import get_upload, save_upload
 from app.services.ubl_xml import generate_belgium_ubl_invoice_xml
 from app.services.workbook import parse_workbook_upload
 from app.storage.file_store import relative_storage_path, save_binary, save_json, storage_path_from_relative
+from app.validation.xml_validator import validate_belgium_invoice_xml
 
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -157,6 +158,7 @@ def download_evidence_bundle(upload_id: str) -> StreamingResponse:
         _write_stored_file(archive, "canonical_invoice.json", record.canonical_json_path)
         _write_stored_file(archive, "validation_report.json", record.validation_report_path)
         _write_stored_file(archive, "invoice.xml", record.generated_xml_path)
+        _write_stored_file(archive, "xml_validation_report.json", record.xml_validation_report_path)
         _write_evidence_file(archive, record, "qr_payload_base64.txt")
         _write_evidence_file(archive, record, "qr_payload_decoded.json")
         _write_evidence_file(archive, record, "qr.png")
@@ -184,7 +186,7 @@ def download_evidence_bundle(upload_id: str) -> StreamingResponse:
         archive.writestr("hashes.txt", _hash_manifest(record))
 
     buffer.seek(0)
-    headers = {"Content-Disposition": f'attachment; filename="{upload_id}_evidence_bundle_skeleton.zip"'}
+    headers = {"Content-Disposition": f'attachment; filename="{_evidence_bundle_filename(record)}"'}
     return StreamingResponse(buffer, media_type="application/zip", headers=headers)
 
 
@@ -264,6 +266,7 @@ def generate_output(upload_id: str) -> EvidenceBundlePreview:
         evidence_status = "outputs_generated_milestone_3c"
     else:
         _generate_belgium_xml_for_record(record)
+        _run_belgium_xml_validation_for_record(record)
         evidence_status = "xml_generated_milestone_2b"
         record.status = "generated"
         record.generated_at = datetime.now(timezone.utc).isoformat()
@@ -525,6 +528,24 @@ def _generated_evidence_file(
     return FileResponse(path, media_type=media_type, filename=filename)
 
 
+def _evidence_bundle_filename(record: UploadRecord) -> str:
+    invoice_number = None
+    if record.canonical_invoice:
+        invoice_number = record.canonical_invoice.invoice.get("invoice_number")
+    base = _safe_download_filename(str(invoice_number or record.upload_id))
+    country = {
+        "belgium_peppol": "belgium",
+        "saudi_zatca": "saudi",
+        "uk_info": "uk",
+    }.get(record.selected_country_pack, _safe_download_filename(record.selected_country_pack))
+    return f"{base}_{country}_evidence_bundle.zip"
+
+
+def _safe_download_filename(value: str) -> str:
+    cleaned = "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in value.strip())
+    return cleaned or "invoice"
+
+
 def _generated_xml_filename(record: UploadRecord) -> str:
     if record.selected_country_pack == "saudi_zatca":
         return f"{record.upload_id}_saudi_zatca_offline_invoice.xml"
@@ -542,7 +563,17 @@ def _run_belgium_validation_pipeline(record: UploadRecord) -> UploadRecord:
         return record
 
     _generate_belgium_xml_for_record(record)
+    _run_belgium_xml_validation_for_record(record)
     record.evidence_bundle_preview.status = "belgium_validation_pipeline_milestone_5b"
+    if record.xml_validation_report and record.xml_validation_report.overall_status == "failed":
+        _store_external_validation_status(
+            record,
+            _external_validation_skipped(
+                "External e-invoice.be sandbox validation skipped because generated Belgium XML did not pass Milestone 6A XML validation.",
+            ),
+        )
+        return record
+
     config_status = load_einvoicebe_configuration_status()
     if not config_status.configured:
         endpoint = f"{config_status.api_base_url.rstrip('/')}/api/validate/ubl"
@@ -567,6 +598,18 @@ def _generate_belgium_xml_for_record(record: UploadRecord) -> None:
     record.generated_xml_sha256_hash = xml_hash
     _mark_generated_file(record, "invoice.xml", record.generated_xml_path, xml_hash)
     record.generated_at = datetime.now(timezone.utc).isoformat()
+
+
+def _run_belgium_xml_validation_for_record(record: UploadRecord) -> None:
+    if not record.generated_xml_path:
+        raise HTTPException(status_code=409, detail="Generate Belgium XML before XML validation.")
+
+    xml_path = storage_path_from_relative(record.generated_xml_path)
+    report = validate_belgium_invoice_xml(xml_path.read_bytes())
+    report_path, report_hash = save_json("generated", f"{record.upload_id}_xml_validation_report.json", report)
+    record.xml_validation_report_path = relative_storage_path(report_path)
+    record.xml_validation_report = report
+    _mark_generated_file(record, "xml_validation_report.json", record.xml_validation_report_path, report_hash)
 
 
 def _run_einvoicebe_external_validation(record: UploadRecord, config) -> None:

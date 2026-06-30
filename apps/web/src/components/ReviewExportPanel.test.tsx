@@ -140,6 +140,8 @@ describe("ReviewExportPanel", () => {
       ...validBelgiumUpload,
       generated_xml_path: "server/storage/generated/UP-BE-VALID_belgium_peppol_invoice.xml",
       generated_xml_sha256_hash: "xml-hash",
+      xml_validation_report_path: "server/storage/generated/UP-BE-VALID_xml_validation_report.json",
+      xml_validation_report: validBelgiumXmlValidationReport,
       external_validation: {
         provider: "e-invoice.be",
         label: "External sandbox validation",
@@ -178,8 +180,16 @@ describe("ReviewExportPanel", () => {
     );
     expect(screen.getByRole("heading", { name: "Internal validation" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "XML generation for validation" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "XML well-formedness" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "UBL structure checks" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Peppol readiness checks" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "External sandbox validation" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Official validator status" })).toBeInTheDocument();
     expect(screen.getByText("Belgium XML was generated from canonical invoice JSON for validation/output evidence.")).toBeInTheDocument();
+    expect(screen.getByText("Generated XML is well-formed.")).toBeInTheDocument();
+    expect(screen.getByText("Basic UBL invoice structure checks passed.")).toBeInTheDocument();
+    expect(screen.getByText("Peppol readiness checks passed.")).toBeInTheDocument();
+    expect(screen.getAllByText("Official validator not configured in this milestone.")).toHaveLength(3);
     expect(screen.getByText("generated")).toBeInTheDocument();
     expect(screen.getAllByText("External e-invoice.be sandbox validation not configured.").length).toBeGreaterThan(0);
     expect(screen.queryByText("Belgium XML generation for validation has not run.")).not.toBeInTheDocument();
@@ -770,6 +780,85 @@ const validBelgiumUpload: UploadRecord = {
     ],
     v1_boundary: "Belgium generated XML only."
   }
+};
+
+const validBelgiumXmlValidationReport = {
+  overall_status: "passed",
+  executed_at: "2026-06-30T12:00:00+00:00",
+  results: [
+    {
+      validator_name: "XML well-formedness",
+      validator_type: "xml_well_formedness",
+      status: "passed",
+      errors: [],
+      warnings: [],
+      informational_messages: ["Generated XML is well-formed."],
+      executed_at: "2026-06-30T12:00:00+00:00",
+      artefact_version: "Python xml.etree.ElementTree",
+      raw_output_path: null,
+      metadata: {}
+    },
+    {
+      validator_name: "Basic UBL invoice structure checks",
+      validator_type: "ubl_structure",
+      status: "passed",
+      errors: [],
+      warnings: [],
+      informational_messages: ["Basic UBL invoice structure checks passed."],
+      executed_at: "2026-06-30T12:00:00+00:00",
+      artefact_version: "Milestone 6A local readiness checks",
+      raw_output_path: null,
+      metadata: {}
+    },
+    {
+      validator_name: "Peppol readiness checks",
+      validator_type: "peppol_readiness",
+      status: "passed",
+      errors: [],
+      warnings: [],
+      informational_messages: ["Peppol readiness checks passed."],
+      executed_at: "2026-06-30T12:00:00+00:00",
+      artefact_version: "Milestone 6A local readiness checks",
+      raw_output_path: null,
+      metadata: {}
+    },
+    {
+      validator_name: "UBL XSD validation",
+      validator_type: "ubl_xsd",
+      status: "not_configured",
+      errors: [],
+      warnings: [],
+      informational_messages: ["Official validator not configured in this milestone."],
+      executed_at: "2026-06-30T12:00:00+00:00",
+      artefact_version: null,
+      raw_output_path: null,
+      metadata: {}
+    },
+    {
+      validator_name: "EN16931 validation",
+      validator_type: "en16931",
+      status: "not_configured",
+      errors: [],
+      warnings: [],
+      informational_messages: ["Official validator not configured in this milestone."],
+      executed_at: "2026-06-30T12:00:00+00:00",
+      artefact_version: null,
+      raw_output_path: null,
+      metadata: {}
+    },
+    {
+      validator_name: "Peppol Schematron validation",
+      validator_type: "peppol_schematron",
+      status: "not_configured",
+      errors: [],
+      warnings: [],
+      informational_messages: ["Official validator not configured in this milestone."],
+      executed_at: "2026-06-30T12:00:00+00:00",
+      artefact_version: null,
+      raw_output_path: null,
+      metadata: {}
+    }
+  ]
 };
 
 const regimeMismatchUpload: UploadRecord = {

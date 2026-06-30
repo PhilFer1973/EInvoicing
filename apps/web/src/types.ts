@@ -163,6 +163,34 @@ export interface ExternalSandboxSendRecord {
   disclaimer: string;
 }
 
+export interface XMLValidationMessage {
+  code: string;
+  message: string;
+  location?: string | null;
+  line?: number | null;
+  column?: number | null;
+  detail?: string | null;
+}
+
+export interface XMLValidatorResult {
+  validator_name: string;
+  validator_type: string;
+  status: "passed" | "failed" | "warning" | "skipped" | "not_configured" | string;
+  errors: XMLValidationMessage[];
+  warnings: XMLValidationMessage[];
+  informational_messages: string[];
+  executed_at: string;
+  artefact_version?: string | null;
+  raw_output_path?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface XMLValidationReport {
+  overall_status: "passed" | "failed" | "warning" | string;
+  executed_at: string;
+  results: XMLValidatorResult[];
+}
+
 export interface UploadRecord {
   upload_id: string;
   original_filename: string;
@@ -175,6 +203,8 @@ export interface UploadRecord {
   validation_report_path: string | null;
   generated_xml_path: string | null;
   generated_xml_sha256_hash: string | null;
+  xml_validation_report_path?: string | null;
+  xml_validation_report?: XMLValidationReport | null;
   generated_at?: string | null;
   storecove_provider_reference?: string | null;
   storecove_submission_status?: string | null;

@@ -657,6 +657,10 @@ function ValidationDetails({
     return <p className="muted compact">Upload and validate a workbook to view validation details.</p>;
   }
   const externalValidation = uploadRecord?.external_validation ?? null;
+  const xmlValidationResults = uploadRecord?.xml_validation_report?.results ?? [];
+  const officialXmlValidatorResults = xmlValidationResults.filter((result) =>
+    ["ubl_xsd", "en16931", "peppol_schematron"].includes(result.validator_type)
+  );
 
   return (
     <div className="modal-stack">
@@ -694,6 +698,27 @@ function ValidationDetails({
         </article>
       </section>
       <section className="validation-detail-group">
+        <h4>XML well-formedness</h4>
+        <XMLValidationLayerCard
+          result={xmlValidationResults.find((result) => result.validator_type === "xml_well_formedness") ?? null}
+          fallback="XML well-formedness validation runs after Belgium XML is generated."
+        />
+      </section>
+      <section className="validation-detail-group">
+        <h4>UBL structure checks</h4>
+        <XMLValidationLayerCard
+          result={xmlValidationResults.find((result) => result.validator_type === "ubl_structure") ?? null}
+          fallback="Basic UBL structure checks run after XML well-formedness passes."
+        />
+      </section>
+      <section className="validation-detail-group">
+        <h4>Peppol readiness checks</h4>
+        <XMLValidationLayerCard
+          result={xmlValidationResults.find((result) => result.validator_type === "peppol_readiness") ?? null}
+          fallback="Peppol readiness checks run after XML well-formedness passes."
+        />
+      </section>
+      <section className="validation-detail-group">
         <h4>External sandbox validation</h4>
         <article className={`validation-result-item ${externalValidationTone(externalValidation)}`}>
           <strong>{externalValidationStatusTitle(externalValidation)}</strong>
@@ -709,7 +734,61 @@ function ValidationDetails({
           ) : null}
         </article>
       </section>
+      <section className="validation-detail-group">
+        <h4>Official validator status</h4>
+        {officialXmlValidatorResults.length ? (
+          <div className="validation-result-list compact-validation-list">
+            {officialXmlValidatorResults.map((result) => (
+              <XMLValidationLayerCard key={result.validator_type} result={result} fallback="" />
+            ))}
+          </div>
+        ) : (
+          <article className="validation-result-item warning">
+            <strong>Official validator not configured</strong>
+            <span>not configured</span>
+            <p>Official validator not configured in this milestone.</p>
+          </article>
+        )}
+      </section>
     </div>
+  );
+}
+
+function XMLValidationLayerCard({
+  fallback,
+  result
+}: {
+  fallback: string;
+  result: NonNullable<UploadRecord["xml_validation_report"]>["results"][number] | null;
+}) {
+  if (!result) {
+    return (
+      <article className="validation-result-item warning">
+        <strong>Not run</strong>
+        <span>not run</span>
+        <p>{fallback}</p>
+      </article>
+    );
+  }
+  const messages = [
+    ...result.errors.map((message) => formatXMLValidationMessage(message)),
+    ...result.warnings.map((message) => formatXMLValidationMessage(message)),
+    ...result.informational_messages
+  ];
+  return (
+    <article className={`validation-result-item ${xmlValidationTone(result.status)}`}>
+      <strong>{result.validator_name}</strong>
+      <span>{result.status.replaceAll("_", " ")}</span>
+      {messages.length ? (
+        <ul className="external-validation-messages in-validation-details">
+          {messages.map((message, index) => (
+            <li key={`${message}-${index}`}>{message}</li>
+          ))}
+        </ul>
+      ) : (
+        <p>{result.status.replaceAll("_", " ")}</p>
+      )}
+    </article>
   );
 }
 
@@ -881,6 +960,18 @@ function externalValidationTone(externalValidation: ExternalValidationRecord | n
   if (externalValidation.status === "failed") return "warning";
   if (externalValidation.status === "passed") return "info";
   return "warning";
+}
+
+function xmlValidationTone(status: string): string {
+  if (status === "failed") return "error";
+  if (status === "passed") return "info";
+  return "warning";
+}
+
+function formatXMLValidationMessage(message: { message: string; location?: string | null; line?: number | null; column?: number | null }): string {
+  const location = message.location ? ` (${message.location})` : "";
+  const position = message.line ? ` at line ${message.line}${message.column ? `, column ${message.column}` : ""}` : "";
+  return `${message.message}${location}${position}`;
 }
 
 function externalValidationStatusTitle(externalValidation: ExternalValidationRecord | null): string {
