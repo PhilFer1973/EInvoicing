@@ -4,6 +4,7 @@ from io import BytesIO
 import json
 from pathlib import Path
 from zipfile import ZipFile
+from xml.etree import ElementTree as ET
 
 from httpx import ASGITransport, AsyncClient
 import pytest
@@ -17,6 +18,7 @@ from app.integrations.storecove.mapper import map_canonical_to_storecove_request
 from app.integrations.storecove.schemas import StorecoveConfig, UK_SANDBOX_WORDING
 from app.main import app
 from app.models.canonical import CanonicalInvoice
+from app.services.evidence import UK_READINESS_WORDING
 from tests.workbook_fixtures import uk_valid_workbook_bytes
 
 
@@ -40,11 +42,12 @@ async def test_uk_roadmap_pack_is_exposed(client: AsyncClient) -> None:
     assert response.status_code == 200
     uk = next(pack for pack in response.json()["country_packs"] if pack["country_pack_id"] == "uk_info")
     assert uk["display_name"] == "United Kingdom / 2029 Peppol Roadmap"
-    assert uk["support_level"] == "info_only_roadmap"
+    assert uk["support_level"] == "generator_readiness"
     assert uk["sandbox_test_available_when_configured"] is True
+    assert uk["default_output_profile"] == "uk_peppol_readiness_ubl"
     assert "mandatory e-invoicing is planned for 2029" in " ".join(uk["scope"])
     assert "Peppol" in " ".join(uk["mandatory_format"])
-    assert UK_SANDBOX_WORDING in uk["v1_boundary"]
+    assert UK_READINESS_WORDING in uk["v1_boundary"]
 
 
 async def test_valid_uk_sample_workbook_validates_and_builds_canonical_invoice(client: AsyncClient) -> None:
@@ -53,13 +56,25 @@ async def test_valid_uk_sample_workbook_validates_and_builds_canonical_invoice(c
     assert payload["status"] == "validated"
     assert payload["validation_report"]["summary"]["overall_status"] == "passed"
     assert payload["validation_report"]["summary"]["blocking_errors"] == 0
+    assert payload["validation_report"]["summary"]["warnings"] == 0
+    readiness_notices = [
+        result
+        for result in payload["validation_report"]["results"]
+        if result["rule_id"].startswith("UK-READINESS-") and result["rule_id"] != "UK-READINESS-000"
+    ]
+    assert len(readiness_notices) == 5
+    assert all(result["status"] == "passed" for result in readiness_notices)
+    assert all(result["severity"] == "warning" for result in readiness_notices)
     canonical = payload["canonical_invoice"]
     assert canonical["seller"]["legal_name"] == "Demo UK Services Ltd"
     assert canonical["seller"]["tax_registration_number"] == "GB123456789"
+    assert canonical["seller"]["peppol_id"] == "9932:GB123456789"
     assert canonical["buyer"]["legal_name"] == "Demo UK Buyer Ltd"
     assert canonical["buyer"]["tax_registration_number"] == "GB987654321"
+    assert canonical["buyer"]["peppol_id"] == "9932:GB987654321"
     assert canonical["invoice"]["invoice_number"] == "INV-UK-2029-001"
     assert canonical["invoice"]["invoice_currency_code"] == "GBP"
+    assert canonical["invoice"]["buyer_reference"] == "UK-BUYER-REF-001"
     assert canonical["tax_summary"] == [
         {
             "tax_category_code": "S",
@@ -70,9 +85,9 @@ async def test_valid_uk_sample_workbook_validates_and_builds_canonical_invoice(c
     ]
     assert canonical["totals"]["gross_total"] == 1200
     files = {file["filename"]: file for file in payload["evidence_bundle_preview"]["files"]}
-    assert "invoice.xml" not in files
-    assert files["storecove_request.json"]["status"] == "pending_sandbox_test"
-    assert files["README_sandbox_only.txt"]["status"] == "preview_available"
+    assert files["invoice.xml"]["status"] == "pending_generation"
+    assert files["xml_validation_report.json"]["status"] == "pending_xml_validation"
+    assert files["en16931_validation_report.json"]["status"] == "pending_official_validation"
 
 
 async def test_checked_in_uk_sample_workbook_validates(client: AsyncClient) -> None:
@@ -84,13 +99,93 @@ async def test_checked_in_uk_sample_workbook_validates(client: AsyncClient) -> N
     assert payload["canonical_invoice"]["invoice"]["invoice_number"] == "INV-UK-2029-001"
 
 
-async def test_uk_production_generation_remains_disabled(client: AsyncClient) -> None:
+async def test_uk_readiness_xml_is_generated_from_canonical_invoice(client: AsyncClient) -> None:
     payload = await _upload_uk_workbook(client, uk_valid_workbook_bytes())
 
     response = await client.post(f"/api/uploads/{payload['upload_id']}/generate")
 
-    assert response.status_code == 400
-    assert "Generation is not configured" in response.text
+    assert response.status_code == 200, response.text
+    evidence = response.json()
+    files = {file["filename"]: file for file in evidence["files"]}
+    assert files["invoice.xml"]["status"] == "stored"
+    assert files["xml_validation_report.json"]["status"] == "stored"
+    assert files["en16931_validation_report.json"]["status"] == "stored"
+    assert files["peppol_schematron_validation_report.json"]["status"] == "stored"
+
+    xml_response = await client.get(f"/api/uploads/{payload['upload_id']}/generated-xml")
+    assert xml_response.status_code == 200
+    xml = xml_response.content.decode("utf-8")
+    assert "INV-UK-2029-001" in xml
+    assert "GBP" in xml
+    assert "GB123456789" in xml
+    assert "GB987654321" in xml
+    assert "200.00" in xml
+    assert "1200.00" in xml
+
+    root = ET.fromstring(xml_response.content)
+    ns = {
+        "cac": "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
+        "cbc": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+    }
+    seller_endpoint = root.find("./cac:AccountingSupplierParty/cac:Party/cbc:EndpointID", ns)
+    buyer_endpoint = root.find("./cac:AccountingCustomerParty/cac:Party/cbc:EndpointID", ns)
+    assert seller_endpoint is not None
+    assert seller_endpoint.attrib["schemeID"] == "9932"
+    assert seller_endpoint.text == "GB123456789"
+    assert buyer_endpoint is not None
+    assert buyer_endpoint.attrib["schemeID"] == "9932"
+    assert buyer_endpoint.text == "GB987654321"
+
+
+async def test_uk_evidence_bundle_contains_readiness_xml_and_honest_metadata(client: AsyncClient) -> None:
+    payload = await _upload_uk_workbook(client, uk_valid_workbook_bytes())
+    generate_response = await client.post(f"/api/uploads/{payload['upload_id']}/generate")
+    assert generate_response.status_code == 200, generate_response.text
+
+    bundle_response = await client.get(f"/api/uploads/{payload['upload_id']}/evidence-bundle/download")
+
+    assert bundle_response.status_code == 200
+    assert "INV-UK-2029-001_uk_evidence_bundle.zip" in bundle_response.headers["content-disposition"]
+    with ZipFile(BytesIO(bundle_response.content)) as archive:
+        names = set(archive.namelist())
+        assert {
+            "source_upload_snapshot.xlsx",
+            "canonical_invoice.json",
+            "validation_report.json",
+            "xml_validation_report.json",
+            "invoice.xml",
+            "country_pack_manifest.json",
+            "evidence_metadata.json",
+            "hashes.txt",
+            "README_uk_readiness_only.txt",
+        } <= names
+        metadata = json.loads(archive.read("evidence_metadata.json"))
+        xml_report = json.loads(archive.read("xml_validation_report.json"))
+        readme = archive.read("README_uk_readiness_only.txt").decode("utf-8")
+
+        assert metadata["uk_readiness"]["wording"] == UK_READINESS_WORDING
+        assert metadata["uk_readiness"]["final_uk_2029_compliance"] == "not_proven"
+        assert len(metadata["readiness_notices"]) == 5
+        assert {notice["label"] for notice in metadata["readiness_notices"]} == {"Readiness notice"}
+        assert {notice["status"] for notice in metadata["readiness_notices"]} == {"passed"}
+        assert metadata["official_xml_validator_status"]["en16931_validation_status"] == "not_configured"
+        assert metadata["official_xml_validator_status"]["peppol_schematron_validation_status"] == "not_configured"
+        assert xml_report["overall_status"] == "passed"
+        assert UK_READINESS_WORDING in readme
+        assert "live Peppol" not in metadata["uk_readiness"]["peppol_delivery"]
+
+
+async def test_true_uk_blocking_errors_still_fail_validation(client: AsyncClient) -> None:
+    payload = await _upload_uk_workbook(client, uk_valid_workbook_bytes(buyer_peppol_id=None))
+
+    assert payload["status"] == "validation_failed"
+    assert payload["validation_report"]["summary"]["overall_status"] == "failed"
+    assert payload["validation_report"]["summary"]["blocking_errors"] >= 1
+    buyer_endpoint_error = next(
+        result for result in payload["validation_report"]["results"] if result["rule_id"] == "UK-BUYER-002"
+    )
+    assert buyer_endpoint_error["status"] == "failed"
+    assert buyer_endpoint_error["severity"] == "error"
 
 
 async def test_storecove_sandbox_is_disabled_without_configuration(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:

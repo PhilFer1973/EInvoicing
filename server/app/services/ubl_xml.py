@@ -20,8 +20,16 @@ ET.register_namespace("cbc", CBC_NS)
 
 
 def generate_belgium_ubl_invoice_xml(canonical: CanonicalInvoice) -> bytes:
+    return _generate_peppol_ubl_invoice_xml(canonical, default_currency="EUR")
+
+
+def generate_uk_peppol_readiness_invoice_xml(canonical: CanonicalInvoice) -> bytes:
+    return _generate_peppol_ubl_invoice_xml(canonical, default_currency="GBP")
+
+
+def _generate_peppol_ubl_invoice_xml(canonical: CanonicalInvoice, *, default_currency: str) -> bytes:
     invoice = canonical.invoice
-    currency = str(invoice.get("invoice_currency_code") or "EUR")
+    currency = str(invoice.get("invoice_currency_code") or default_currency)
     root = ET.Element(_ubl("Invoice"))
 
     _text(root, "cbc", "CustomizationID", CUSTOMIZATION_ID)

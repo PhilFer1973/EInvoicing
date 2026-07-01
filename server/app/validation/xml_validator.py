@@ -27,6 +27,13 @@ def run_belgium_xml_validation(
     xml_bytes: bytes,
     schematron_configs: list[SchematronValidatorConfig] | None = None,
 ) -> XMLValidationExecution:
+    return run_peppol_xml_validation(xml_bytes, schematron_configs)
+
+
+def run_peppol_xml_validation(
+    xml_bytes: bytes,
+    schematron_configs: list[SchematronValidatorConfig] | None = None,
+) -> XMLValidationExecution:
     executed_at = _now()
     results: list[XMLValidatorResult] = []
     raw_reports: list[RawValidatorOutput] = []

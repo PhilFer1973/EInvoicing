@@ -278,7 +278,8 @@ def uk_valid_workbook(
     *,
     invoice_number: str | None = "INV-UK-2029-001",
     tax_total: float = 200.00,
-    selected_output_profile: str = "storecove_peppol_sandbox_readiness_test",
+    selected_output_profile: str = "uk_peppol_readiness_ubl",
+    buyer_peppol_id: str | None = "9932:GB987654321",
 ) -> Workbook:
     workbook = Workbook()
     workbook.remove(workbook.active)
@@ -312,8 +313,8 @@ def uk_valid_workbook(
             "EC1A 1AA",
             "United Kingdom",
             "billing@example.test",
-            "0088:123456789",
-            "0088",
+            "9932:GB123456789",
+            "9932",
         ]
     )
 
@@ -348,8 +349,8 @@ def uk_valid_workbook(
             "M1 1AA",
             "United Kingdom",
             "ap@example.test",
-            "0088:987654321",
-            "0088",
+            buyer_peppol_id,
+            "9932",
         ]
     )
 
@@ -403,7 +404,7 @@ def uk_valid_workbook(
             "",
             "30",
             "INV-UK-2029-001",
-            "UK Peppol sandbox readiness sample.",
+            "UK Peppol readiness XML sample.",
         ]
     )
 

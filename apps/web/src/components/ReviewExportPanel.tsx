@@ -5,7 +5,6 @@ import {
   canonicalInvoiceDownloadUrl,
   canonicalInvoiceUrl,
   evidenceBundleDownloadUrl,
-  fetchStorecoveSandboxConfiguration,
   fetchGeneratedQrPayloadDecoded,
   generateOutput,
   generatedPdfDownloadUrl,
@@ -15,15 +14,14 @@ import {
   generatedQrUrl,
   generatedXmlDownloadUrl,
   generatedXmlUrl,
-  sendToStorecoveSandbox,
   validateUploadPipeline
 } from "../services/api";
 import type {
   CountryPack,
   DecodedQrPayload,
   ExternalValidationRecord,
-  StorecoveConfigurationStatus,
   UploadRecord,
+  ValidationResult,
   ValidationReport
 } from "../types";
 
@@ -54,11 +52,9 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
   const [isExporting, setIsExporting] = useState(false);
   const [validationPipelineAttempted, setValidationPipelineAttempted] = useState(false);
   const [generationError, setGenerationError] = useState("");
-  const [storecoveConfig, setStorecoveConfig] = useState<StorecoveConfigurationStatus | null>(null);
   const isSaudiPack = pack?.country_pack_id === "saudi_zatca";
   const isUkPack = pack?.country_pack_id === "uk_info";
-  const generationSupported = pack?.country_pack_id === "belgium_peppol" || isSaudiPack;
-  const storecoveActionSupported = isUkPack && Boolean(pack?.sandbox_test_available_when_configured);
+  const generationSupported = pack?.country_pack_id === "belgium_peppol" || isSaudiPack || isUkPack;
   const canExportZip =
     Boolean(uploadRecord?.evidence_bundle_preview.files.length) &&
     !hasRegimeMismatch;
@@ -67,24 +63,18 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
     Boolean(uploadRecord?.canonical_invoice) &&
     !hasRegimeMismatch &&
     (validationReport?.summary.blocking_errors ?? 1) === 0;
-  const canSendStorecoveSandbox =
-    storecoveActionSupported &&
-    Boolean(uploadRecord?.canonical_invoice) &&
-    !hasRegimeMismatch &&
-    (validationReport?.summary.blocking_errors ?? 1) === 0 &&
-    Boolean(storecoveConfig?.configured);
   const generateTitle =
-    isUkPack
-      ? storecoveConfig?.message ?? "Storecove sandbox is not configured. Add sandbox credentials to enable UK Peppol testing."
-      : canGenerate
+    canGenerate
       ? isSaudiPack
         ? "Generate offline/demo Saudi XML, QR tags 1-5 and visual PDF. No FATOORA submission, clearance, Phase Two cryptography or production signature."
-        : "Generate Belgium Peppol-style UBL XML."
+        : isUkPack
+          ? "Generate UK Peppol readiness XML only. This does not prove final UK 2029 statutory compliance."
+          : "Generate Belgium Peppol-style UBL XML."
       : generationSupported
         ? "Resolve blocking validation errors before generation."
         : "Generation is not configured for this country pack.";
   const actionLabel = "Generate";
-  const isActionEnabled = isUkPack ? canSendStorecoveSandbox : canGenerate;
+  const isActionEnabled = canGenerate;
 
   useEffect(() => {
     setLocalUploadRecord(incomingUploadRecord);
@@ -100,37 +90,6 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
     const timer = window.setTimeout(() => setIsExporting(false), 900);
     return () => window.clearTimeout(timer);
   }, [isExporting]);
-
-  useEffect(() => {
-    let active = true;
-    if (!isUkPack) {
-      setStorecoveConfig(null);
-      return () => {
-        active = false;
-      };
-    }
-
-    void fetchStorecoveSandboxConfiguration()
-      .then((config) => {
-        if (active) setStorecoveConfig(config);
-      })
-      .catch(() => {
-        if (active) {
-          setStorecoveConfig({
-            sandbox_enabled: false,
-            configured: false,
-            api_base_url: null,
-            missing_fields: [],
-            mode: "disabled",
-            message: "Storecove sandbox is not configured. Add sandbox credentials to enable UK Peppol testing."
-          });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [isUkPack]);
 
   async function handleValidate() {
     if (!uploadRecord) return;
@@ -169,22 +128,6 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
       setDetailView("outputs");
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "XML generation failed");
-    } finally {
-      setIsGenerating(false);
-    }
-  }
-
-  async function handleStorecoveSandbox() {
-    if (!uploadRecord || !canSendStorecoveSandbox) return;
-    setIsGenerating(true);
-    setGenerationError("");
-    try {
-      const record = await sendToStorecoveSandbox(uploadRecord.upload_id);
-      setLocalUploadRecord(record);
-      onUploadRecordChange?.(record);
-      setDetailView("outputs");
-    } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : "Storecove sandbox test failed");
     } finally {
       setIsGenerating(false);
     }
@@ -236,18 +179,12 @@ export function ReviewExportPanel({ pack, uploadRecord: incomingUploadRecord, on
           aria-busy={isGenerating}
           className={`button-primary action-button action-command-button ${isGenerating ? "is-processing" : ""}`}
           disabled={!isActionEnabled || isGenerating}
-          onClick={() => {
-            if (isUkPack) {
-              void handleStorecoveSandbox();
-            } else {
-              void handleGenerate();
-            }
-          }}
+          onClick={() => void handleGenerate()}
           title={generateTitle}
           type="button"
         >
           <Sparkles aria-hidden="true" size={17} />
-          {isGenerating ? (isUkPack ? "Sending" : "Generating") : actionLabel}
+          {isGenerating ? "Generating" : actionLabel}
         </button>
         {generationError ? <p className="action-error">{generationError}</p> : null}
         {uploadRecord && canExportZip ? (
@@ -376,7 +313,7 @@ function GeneratedOutputDetails({ uploadRecord }: { uploadRecord: UploadRecord |
             <FileText aria-hidden="true" size={19} />
             <div>
               <strong>Invoice XML</strong>
-              <span>Generated only; official artefact validation not configured</span>
+              <span>{generatedXmlLabel(uploadRecord)}</span>
             </div>
             <div className="output-artefact-links">
               <a aria-label="Open invoice XML" className="output-artefact-action" href={generatedXmlUrl(uploadRecord.upload_id)} rel="noreferrer" target="_blank" title="Open invoice XML">
@@ -520,6 +457,27 @@ function hasStoredEvidenceFile(uploadRecord: UploadRecord, filename: string): bo
   );
 }
 
+function generatedXmlLabel(uploadRecord: UploadRecord): string {
+  if (uploadRecord.selected_country_pack === "uk_info") {
+    return "UK Peppol readiness XML only. Generated using Peppol BIS / EN16931-style structure based on currently announced UK Peppol direction. This does not prove final UK 2029 statutory compliance.";
+  }
+  return "Generated only; official artefact validation not configured";
+}
+
+function isUkReadinessNotice(result: ValidationResult): boolean {
+  return result.rule_id.startsWith("UK-READINESS-") && result.rule_id !== "UK-READINESS-000";
+}
+
+function validationResultTone(result: ValidationResult): string {
+  if (isUkReadinessNotice(result)) return "info";
+  return result.severity;
+}
+
+function validationResultStatusLabel(result: ValidationResult): string {
+  if (isUkReadinessNotice(result)) return "Readiness notice";
+  return result.status.replaceAll("_", " ");
+}
+
 function ValidationDetails({
   pipelineAttempted,
   report,
@@ -535,7 +493,8 @@ function ValidationDetails({
   const externalValidation = uploadRecord?.external_validation ?? null;
   const xmlValidationResults = uploadRecord?.xml_validation_report?.results ?? [];
   const isBelgiumValidation = uploadRecord?.selected_country_pack === "belgium_peppol";
-  const internalResults = report.results.filter((result) => result.layer !== "country_boundary");
+  const ukReadinessNotices = report.results.filter(isUkReadinessNotice);
+  const internalResults = report.results.filter((result) => result.layer !== "country_boundary" && !isUkReadinessNotice(result));
 
   return (
     <div className="modal-stack">
@@ -555,15 +514,31 @@ function ValidationDetails({
         ) : null}
         <div className="validation-result-list">
           {internalResults.map((result, index) => (
-            <article className={`validation-result-item ${result.severity}`} key={`${result.rule_id}-${index}`}>
+            <article className={`validation-result-item ${validationResultTone(result)}`} key={`${result.rule_id}-${index}`}>
               <strong>{result.rule_id}</strong>
-              <span>{result.status.replaceAll("_", " ")}</span>
+              <span>{validationResultStatusLabel(result)}</span>
               <p>{result.message}</p>
               {result.corrective_action ? <small>{result.corrective_action}</small> : null}
             </article>
           ))}
         </div>
       </section>
+      {ukReadinessNotices.length ? (
+        <section className="validation-detail-group">
+          <h4>UK readiness boundaries</h4>
+          <p className="muted compact">These notices explain the limits of the UK readiness XML. They are not blocking workbook errors.</p>
+          <div className="validation-result-list">
+            {ukReadinessNotices.map((result, index) => (
+              <article className="validation-result-item info" key={`${result.rule_id}-${index}`}>
+                <strong>{result.rule_id}</strong>
+                <span>Readiness notice</span>
+                <p>{result.message}</p>
+                {result.corrective_action ? <small>{result.corrective_action}</small> : null}
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {isBelgiumValidation ? (
         <>
           <section className="validation-detail-group">

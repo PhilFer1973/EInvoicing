@@ -12,6 +12,10 @@ from app.models.upload import UploadRecord
 from app.storage.file_store import storage_path_from_relative
 
 
+UK_READINESS_WORDING = (
+    "UK Peppol readiness XML only. Generated using Peppol BIS / EN16931-style structure based on "
+    "currently announced UK Peppol direction. This does not prove final UK 2029 statutory compliance."
+)
 UK_SANDBOX_WORDING = (
     "UK Peppol sandbox test only. This tests Peppol-style invoice readiness through a sandbox provider. "
     "It does not prove final UK 2029 statutory compliance."
@@ -39,7 +43,7 @@ def official_validation_note(country_pack_id: str) -> str:
         )
     if country_pack_id == "uk_info":
         return (
-            "Official artefact validation not configured. UK Peppol sandbox test only: no final UK 2029 "
+            "Official artefact validation not configured. UK Peppol readiness XML only: no final UK 2029 "
             "statutory compliance validation, Peppol production transmission, HMRC submission or live "
             "acceptance has occurred."
         )
@@ -96,6 +100,7 @@ def build_evidence_metadata(record: UploadRecord, country_pack: CountryPack) -> 
             "warnings_ack_required": report.summary.warnings_ack_required,
             "official_validator_status": report.summary.official_artefact_validation,
         },
+        "readiness_notices": _readiness_notices(record),
         "generated_outputs": generated_outputs,
         "xml_generation_for_validation": _xml_generation_for_validation_metadata(record),
         "xml_validation": _xml_validation_metadata(record),
@@ -110,6 +115,18 @@ def build_evidence_metadata(record: UploadRecord, country_pack: CountryPack) -> 
             "status": report.summary.official_artefact_validation,
             "note": official_validation_note(record.selected_country_pack),
         },
+        "uk_readiness": (
+            {
+                "readiness_xml_only": True,
+                "wording": UK_READINESS_WORDING,
+                "official_uk_validation_status": "not_available / not_configured",
+                "final_uk_2029_compliance": "not_proven",
+                "hmrc_submission": "not_submitted",
+                "peppol_delivery": "not_submitted",
+            }
+            if record.selected_country_pack == "uk_info"
+            else None
+        ),
         "storecove_sandbox": (
             {
                 "sandbox_only": True,
@@ -142,24 +159,41 @@ def _external_validation_metadata(record: UploadRecord) -> dict[str, Any]:
     return {"status": "not_applicable"}
 
 
+def _readiness_notices(record: UploadRecord) -> list[dict[str, Any]]:
+    if record.selected_country_pack != "uk_info":
+        return []
+    return [
+        {
+            "rule_id": result.rule_id,
+            "label": "Readiness notice",
+            "status": result.status,
+            "message": result.message,
+            "field_path": result.field_path,
+        }
+        for result in record.validation_report.results
+        if result.rule_id.startswith("UK-READINESS-") and result.rule_id != "UK-READINESS-000"
+    ]
+
+
 def _xml_validation_metadata(record: UploadRecord) -> dict[str, Any]:
     if record.xml_validation_report:
         return record.xml_validation_report.model_dump(mode="json")
-    if record.selected_country_pack == "belgium_peppol":
+    if record.selected_country_pack in {"belgium_peppol", "uk_info"}:
+        country_label = "Belgium" if record.selected_country_pack == "belgium_peppol" else "UK readiness"
         if record.validation_report.summary.blocking_errors > 0:
             return {
                 "overall_status": "skipped",
-                "message": "Belgium XML validation skipped because internal validation has blocking errors.",
+                "message": f"{country_label} XML validation skipped because internal validation has blocking errors.",
             }
         return {
             "overall_status": "not_run",
-            "message": "Belgium XML validation has not run.",
+            "message": f"{country_label} XML validation has not run.",
         }
     return {"overall_status": "not_applicable"}
 
 
 def _official_xml_validator_status(record: UploadRecord) -> dict[str, Any]:
-    if record.selected_country_pack != "belgium_peppol":
+    if record.selected_country_pack not in {"belgium_peppol", "uk_info"}:
         return {"status": "not_applicable"}
     official_results = []
     if record.xml_validation_report:
@@ -282,21 +316,22 @@ def _sandbox_sender_identity_check(record: UploadRecord) -> dict[str, Any] | Non
 
 
 def _xml_generation_for_validation_metadata(record: UploadRecord) -> dict[str, Any]:
-    if record.selected_country_pack != "belgium_peppol":
+    if record.selected_country_pack not in {"belgium_peppol", "uk_info"}:
         return {"status": "not_applicable"}
+    country_label = "Belgium UBL" if record.selected_country_pack == "belgium_peppol" else "UK Peppol readiness"
     if record.generated_xml_path:
         return {
             "status": "generated",
             "filename": "invoice.xml",
             "sha256": record.generated_xml_sha256_hash,
-            "note": "Belgium UBL XML was generated from canonical invoice JSON for validation/output evidence.",
+            "note": f"{country_label} XML was generated from canonical invoice JSON for validation/output evidence.",
         }
     if record.validation_report.summary.blocking_errors > 0:
         return {
             "status": "skipped",
-            "note": "Belgium XML generation for validation was skipped because internal validation has blocking errors.",
+            "note": f"{country_label} XML generation was skipped because internal validation has blocking errors.",
         }
     return {
         "status": "not_run",
-        "note": "Belgium XML generation for validation has not run.",
+        "note": f"{country_label} XML generation has not run.",
     }

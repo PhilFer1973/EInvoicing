@@ -41,18 +41,18 @@ from app.integrations.storecove.client import (
 from app.integrations.storecove.mapper import map_canonical_to_storecove_request
 from app.integrations.storecove.schemas import StorecoveConfigurationStatus, UK_SANDBOX_WORDING
 from app.models.canonical import CanonicalInvoice
-from app.models.upload import EvidenceBundlePreview, ExternalSandboxSendRecord, ExternalValidationRecord, UploadRecord
+from app.models.upload import EvidenceBundlePreview, EvidenceFile, ExternalSandboxSendRecord, ExternalValidationRecord, UploadRecord
 from app.models.validation import ValidationReport
 from app.services.country_packs import CountryPackNotFound, get_country_pack
-from app.services.evidence import build_evidence_metadata
+from app.services.evidence import UK_READINESS_WORDING, build_evidence_metadata
 from app.services.saudi_pdf import SaudiVisualPdfError, generate_saudi_visual_invoice_pdf
 from app.services.saudi_qr import generate_saudi_phase_one_qr
 from app.services.saudi_xml import generate_saudi_zatca_invoice_xml
 from app.services.upload_store import get_upload, save_upload
-from app.services.ubl_xml import generate_belgium_ubl_invoice_xml
+from app.services.ubl_xml import generate_belgium_ubl_invoice_xml, generate_uk_peppol_readiness_invoice_xml
 from app.services.workbook import parse_workbook_upload
 from app.storage.file_store import relative_storage_path, save_binary, save_json, storage_path_from_relative
-from app.validation.xml_validator import run_belgium_xml_validation
+from app.validation.xml_validator import run_belgium_xml_validation, run_peppol_xml_validation
 
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -171,6 +171,7 @@ def download_evidence_bundle(upload_id: str) -> StreamingResponse:
         _write_evidence_file(archive, record, "storecove_response.json")
         _write_evidence_file(archive, record, "storecove_status.json")
         _write_evidence_file(archive, record, "provider_reference.txt")
+        _write_evidence_file(archive, record, "README_sandbox_only.txt")
         _write_evidence_file(archive, record, "einvoicebe_validation_request.json")
         _write_evidence_file(archive, record, "einvoicebe_validation_response.json")
         _write_evidence_file(archive, record, "external_validation_status.json")
@@ -179,7 +180,7 @@ def download_evidence_bundle(upload_id: str) -> StreamingResponse:
         _write_evidence_file(archive, record, "external_sandbox_send_status.json")
         _write_evidence_file(archive, record, "einvoicebe_send_provider_reference.txt")
         if record.selected_country_pack == "uk_info":
-            archive.writestr("README_sandbox_only.txt", _uk_sandbox_readme())
+            archive.writestr("README_uk_readiness_only.txt", _uk_readiness_readme())
         metadata = build_evidence_metadata(record, pack)
         archive.writestr(
             "evidence.json",
@@ -242,7 +243,7 @@ def generate_output(upload_id: str) -> EvidenceBundlePreview:
     record = get_upload(upload_id)
     if not record:
         raise HTTPException(status_code=404, detail="Upload not found.")
-    if record.selected_country_pack not in {"belgium_peppol", "saudi_zatca"}:
+    if record.selected_country_pack not in {"belgium_peppol", "saudi_zatca", "uk_info"}:
         raise HTTPException(
             status_code=400,
             detail="Generation is not configured for the selected country pack.",
@@ -268,10 +269,19 @@ def generate_output(upload_id: str) -> EvidenceBundlePreview:
         qr_image_filename = f"{upload_id}_saudi_zatca_phase1_qr.png"
         pdf_filename = f"{upload_id}_saudi_zatca_visual_invoice.pdf"
         evidence_status = "outputs_generated_milestone_3c"
-    else:
+    elif record.selected_country_pack == "belgium_peppol":
         _generate_belgium_xml_for_record(record)
         _run_belgium_xml_validation_for_record(record)
         evidence_status = "xml_generated_milestone_2b"
+        record.status = "generated"
+        record.generated_at = datetime.now(timezone.utc).isoformat()
+        record.evidence_bundle_preview.status = evidence_status
+        save_upload(record)
+        return record.evidence_bundle_preview
+    else:
+        _generate_uk_readiness_xml_for_record(record)
+        _run_peppol_xml_validation_for_record(record)
+        evidence_status = "uk_peppol_readiness_xml_generated_milestone_8a"
         record.status = "generated"
         record.generated_at = datetime.now(timezone.utc).isoformat()
         record.evidence_bundle_preview.status = evidence_status
@@ -508,6 +518,9 @@ def _mark_generated_file(record: UploadRecord, filename: str, storage_path: str,
             file.sha256 = sha256
             file.storage_path = storage_path
             return
+    record.evidence_bundle_preview.files.append(
+        EvidenceFile(filename=filename, status="stored", sha256=sha256, storage_path=storage_path)
+    )
 
 
 def _require_upload(upload_id: str) -> UploadRecord:
@@ -553,6 +566,8 @@ def _safe_download_filename(value: str) -> str:
 def _generated_xml_filename(record: UploadRecord) -> str:
     if record.selected_country_pack == "saudi_zatca":
         return f"{record.upload_id}_saudi_zatca_offline_invoice.xml"
+    if record.selected_country_pack == "uk_info":
+        return f"{record.upload_id}_uk_peppol_readiness_invoice.xml"
     return f"{record.upload_id}_belgium_peppol_invoice.xml"
 
 
@@ -604,12 +619,54 @@ def _generate_belgium_xml_for_record(record: UploadRecord) -> None:
     record.generated_at = datetime.now(timezone.utc).isoformat()
 
 
+def _generate_uk_readiness_xml_for_record(record: UploadRecord) -> None:
+    if not record.canonical_invoice:
+        raise HTTPException(status_code=400, detail="Canonical invoice JSON is required before UK readiness XML generation.")
+    xml_content = generate_uk_peppol_readiness_invoice_xml(record.canonical_invoice)
+    xml_path, xml_hash = save_binary("generated", _generated_xml_filename(record), xml_content)
+    record.generated_xml_path = relative_storage_path(xml_path)
+    record.generated_xml_sha256_hash = xml_hash
+    _mark_generated_file(record, "invoice.xml", record.generated_xml_path, xml_hash)
+    record.generated_at = datetime.now(timezone.utc).isoformat()
+
+
 def _run_belgium_xml_validation_for_record(record: UploadRecord) -> None:
     if not record.generated_xml_path:
         raise HTTPException(status_code=409, detail="Generate Belgium XML before XML validation.")
 
     xml_path = storage_path_from_relative(record.generated_xml_path)
     execution = run_belgium_xml_validation(xml_path.read_bytes())
+    report = execution.report
+    for raw_report in execution.raw_reports:
+        raw_path, raw_hash = save_binary("generated", f"{record.upload_id}_{raw_report.filename}", raw_report.content)
+        relative_raw_path = relative_storage_path(raw_path)
+        for result in report.results:
+            if result.validator_type == raw_report.validator_type:
+                result.raw_output_path = relative_raw_path
+        _mark_generated_file(record, raw_report.filename, relative_raw_path, raw_hash)
+
+    for result in report.results:
+        if result.validator_type in {"en16931", "peppol_schematron"}:
+            filename = (
+                "en16931_validation_report.json"
+                if result.validator_type == "en16931"
+                else "peppol_schematron_validation_report.json"
+            )
+            result_path, result_hash = save_json("generated", f"{record.upload_id}_{filename}", result)
+            _mark_generated_file(record, filename, relative_storage_path(result_path), result_hash)
+
+    report_path, report_hash = save_json("generated", f"{record.upload_id}_xml_validation_report.json", report)
+    record.xml_validation_report_path = relative_storage_path(report_path)
+    record.xml_validation_report = report
+    _mark_generated_file(record, "xml_validation_report.json", record.xml_validation_report_path, report_hash)
+
+
+def _run_peppol_xml_validation_for_record(record: UploadRecord) -> None:
+    if not record.generated_xml_path:
+        raise HTTPException(status_code=409, detail="Generate XML before XML validation.")
+
+    xml_path = storage_path_from_relative(record.generated_xml_path)
+    execution = run_peppol_xml_validation(xml_path.read_bytes())
     report = execution.report
     for raw_report in execution.raw_reports:
         raw_path, raw_hash = save_binary("generated", f"{record.upload_id}_{raw_report.filename}", raw_report.content)
@@ -940,4 +997,13 @@ def _uk_sandbox_readme() -> str:
         "Milestone 5A does not perform live Storecove API calls. Mocked sandbox responses are test evidence only.\n"
         "No production Peppol transmission, HMRC submission, statutory compliance proof or authority acceptance is included.\n"
         "Storecove API keys and secrets must not appear in this evidence bundle.\n"
+    )
+
+
+def _uk_readiness_readme() -> str:
+    return (
+        f"{UK_READINESS_WORDING}\n\n"
+        "Milestone 8A generates a local Peppol BIS / EN16931-style readiness XML from canonical invoice JSON.\n"
+        "UBL XSD, EN16931 and Peppol Schematron artefact validation remains not configured unless real artefacts are installed and executed.\n"
+        "No live Peppol transmission, HMRC submission, final UK compliance proof or recipient acceptance is included.\n"
     )

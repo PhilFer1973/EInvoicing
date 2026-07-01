@@ -42,16 +42,20 @@ class CountryAdapter:
             EvidenceFile(filename="country_pack_manifest.json", status="preview_available"),
             EvidenceFile(filename="hashes.txt", status="pending_generation"),
         ]
-        if self.pack.country_pack_id in {"belgium_peppol", "saudi_zatca"}:
+        if self.pack.country_pack_id in {"belgium_peppol", "saudi_zatca", "uk_info"}:
             files.insert(0, EvidenceFile(filename="invoice.xml", status="pending_generation"))
+        if self.pack.country_pack_id in {"belgium_peppol", "uk_info"}:
+            xml_files = [
+                EvidenceFile(filename="xml_validation_report.json", status="pending_xml_validation"),
+                EvidenceFile(filename="en16931_validation_report.json", status="pending_official_validation"),
+                EvidenceFile(filename="peppol_schematron_validation_report.json", status="pending_official_validation"),
+                EvidenceFile(filename="en16931_validation_raw.svrl", status="pending_official_validation"),
+                EvidenceFile(filename="peppol_schematron_validation_raw.svrl", status="pending_official_validation"),
+            ]
+            files.extend(xml_files)
         if self.pack.country_pack_id == "belgium_peppol":
             files.extend(
                 [
-                    EvidenceFile(filename="xml_validation_report.json", status="pending_xml_validation"),
-                    EvidenceFile(filename="en16931_validation_report.json", status="pending_official_validation"),
-                    EvidenceFile(filename="peppol_schematron_validation_report.json", status="pending_official_validation"),
-                    EvidenceFile(filename="en16931_validation_raw.svrl", status="pending_official_validation"),
-                    EvidenceFile(filename="peppol_schematron_validation_raw.svrl", status="pending_official_validation"),
                     EvidenceFile(filename="einvoicebe_validation_request.json", status="pending_external_validation"),
                     EvidenceFile(filename="einvoicebe_validation_response.json", status="pending_external_validation"),
                     EvidenceFile(filename="external_validation_status.json", status="pending_external_validation"),
@@ -67,16 +71,6 @@ class CountryAdapter:
             files.insert(2, EvidenceFile(filename="qr.png", status="pending_generation"))
             files.insert(3, EvidenceFile(filename="qr_payload_base64.txt", status="pending_generation"))
             files.insert(4, EvidenceFile(filename="qr_payload_decoded.json", status="pending_generation"))
-        if self.pack.country_pack_id == "uk_info":
-            files.extend(
-                [
-                    EvidenceFile(filename="storecove_request.json", status="pending_sandbox_test"),
-                    EvidenceFile(filename="storecove_response.json", status="pending_sandbox_test"),
-                    EvidenceFile(filename="storecove_status.json", status="pending_sandbox_test"),
-                    EvidenceFile(filename="provider_reference.txt", status="pending_sandbox_test"),
-                    EvidenceFile(filename="README_sandbox_only.txt", status="preview_available"),
-                ]
-            )
 
         return EvidenceBundlePreview(
             generation_id="GEN-PREVIEW",

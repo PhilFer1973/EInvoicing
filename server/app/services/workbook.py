@@ -725,36 +725,121 @@ def _saudi_vat_reconciliation_results(canonical: CanonicalInvoice, pack: Country
 
 def _uk_validation_results(canonical: CanonicalInvoice, pack: CountryPack) -> list[ValidationResult]:
     results: list[ValidationResult] = []
+    invoice = canonical.invoice
+    seller = canonical.seller
+    buyer = canonical.buyer
 
-    if _is_blank(canonical.buyer.get("tax_registration_number")):
+    required_checks = [
+        ("UK-SELLER-001", "seller.country_code", seller.get("country_code"), "Seller country must be GB for the UK readiness sample.", "Set seller country_code to GB on the entities sheet.", lambda value: str(value or "").upper() == "GB"),
+        ("UK-SELLER-002", "seller.peppol_id", seller.get("peppol_id"), "Seller Peppol endpoint ID is required for UK readiness XML.", "Add peppol_id on the entities sheet.", lambda value: not _is_blank(value)),
+        ("UK-BUYER-001", "buyer.country_code", buyer.get("country_code"), "Buyer country must be GB for the UK readiness sample.", "Set buyer country_code to GB on the customers sheet.", lambda value: str(value or "").upper() == "GB"),
+        ("UK-BUYER-002", "buyer.peppol_id", buyer.get("peppol_id"), "Buyer Peppol endpoint ID is required for UK readiness XML.", "Add peppol_id on the customers sheet.", lambda value: not _is_blank(value)),
+        ("UK-INV-001", "invoice.invoice_currency_code", invoice.get("invoice_currency_code"), "Invoice currency is required for UK readiness XML.", "Add invoice_currency_code on the invoice_header sheet.", lambda value: not _is_blank(value)),
+    ]
+    for rule_id, field_path, value, message, corrective_action, predicate in required_checks:
+        if not predicate(value):
+            results.append(
+                _blocking_result(
+                    rule_id,
+                    "country_preflight",
+                    field_path,
+                    message,
+                    pack,
+                    corrective_action,
+                )
+            )
+
+    if not canonical.lines:
         results.append(
             _blocking_result(
-                "UK-BUYER-001",
-                "country_preflight",
-                "buyer.tax_registration_number",
-                "Buyer VAT number is required for the UK Peppol sandbox readiness sample.",
+                "UK-LINE-000",
+                "legal_invoice_requirements",
+                "lines",
+                "At least one invoice line is required for UK readiness XML.",
                 pack,
-                "Add tax_registration_number on the customers sheet.",
+                "Add invoice line rows to the invoice_lines sheet.",
             )
         )
+
+    for index, line in enumerate(canonical.lines, start=1):
+        line_path = f"lines[{index}]"
+        line_checks = [
+            ("UK-LINE-001", "description", "Line description is required for UK readiness XML."),
+            ("UK-LINE-002", "quantity", "Line quantity is required for UK readiness XML."),
+            ("UK-LINE-003", "unit_price", "Line unit price is required for UK readiness XML."),
+            ("UK-LINE-004", "line_net_amount", "Line net amount is required for UK readiness XML."),
+            ("UK-LINE-005", "tax_rate", "Line VAT rate is required for UK readiness XML."),
+            ("UK-LINE-006", "tax_amount", "Line VAT amount is required for UK readiness XML."),
+        ]
+        for rule_id, field, message in line_checks:
+            if _is_blank(line.get(field)):
+                results.append(
+                    _blocking_result(
+                        rule_id,
+                        "legal_invoice_requirements",
+                        f"{line_path}.{field}",
+                        message,
+                        pack,
+                        f"Add {field} on the invoice_lines sheet.",
+                    )
+                )
 
     results.extend(_uk_vat_reconciliation_results(canonical, pack))
 
     if not any(result.severity == "error" and result.status == "failed" for result in results):
         results.append(
             ValidationResult(
-                rule_id="UK-SANDBOX-000",
+                rule_id="UK-READINESS-000",
                 layer="country_preflight",
                 severity="info",
                 status="passed",
                 message=(
-                    "UK Peppol sandbox readiness validation passed. This does not prove final UK 2029 "
+                    "UK Peppol readiness validation passed. This does not prove final UK 2029 "
                     "statutory compliance."
                 ),
                 field_path="invoice.selected_country_pack",
                 country_pack_id=pack.country_pack_id,
                 country_pack_version=pack.pack_version,
             )
+        )
+        results.extend(
+            [
+                _warning_result(
+                    "UK-READINESS-001",
+                    "country_preflight",
+                    "country_pack.uk_standard_status",
+                    "Final UK 2029 technical standard is not yet published/configured in this app.",
+                    pack,
+                ),
+                _warning_result(
+                    "UK-READINESS-002",
+                    "country_preflight",
+                    "country_pack.output_scope",
+                    "UK output is readiness XML only.",
+                    pack,
+                ),
+                _warning_result(
+                    "UK-READINESS-003",
+                    "country_preflight",
+                    "country_pack.transmission",
+                    "No live Peppol transmission is performed.",
+                    pack,
+                ),
+                _warning_result(
+                    "UK-READINESS-004",
+                    "country_preflight",
+                    "country_pack.hmrc_submission",
+                    "No HMRC submission, clearance or real-time reporting is performed.",
+                    pack,
+                ),
+                _warning_result(
+                    "UK-READINESS-005",
+                    "country_preflight",
+                    "country_pack.compliance_claim",
+                    "No final UK statutory compliance claim is made.",
+                    pack,
+                ),
+            ]
         )
 
     return results
@@ -837,6 +922,26 @@ def _ack_warning_result(rule_id: str, field_path: str, message: str, pack: Count
         country_pack_id=pack.country_pack_id,
         country_pack_version=pack.pack_version,
         corrective_action="Add Peppol endpoint details or acknowledge before export in a later milestone.",
+    )
+
+
+def _warning_result(
+    rule_id: str,
+    layer: str,
+    field_path: str,
+    message: str,
+    pack: CountryPack,
+) -> ValidationResult:
+    return ValidationResult(
+        rule_id=rule_id,
+        layer=layer,
+        severity="warning",
+        status="passed",
+        message=message,
+        field_path=field_path,
+        country_pack_id=pack.country_pack_id,
+        country_pack_version=pack.pack_version,
+        corrective_action="Treat this as a readiness boundary, not as a blocking workbook error.",
     )
 
 

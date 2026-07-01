@@ -2,50 +2,50 @@
   "country_pack_id": "uk_info",
   "display_name": "United Kingdom / 2029 Peppol Roadmap",
   "country_code": "GB",
-  "pack_version": "0.2.0",
-  "support_level": "info_only_roadmap",
+  "pack_version": "0.3.0",
+  "support_level": "generator_readiness",
   "sandbox_test_available_when_configured": true,
-  "v1_boundary": "UK Peppol sandbox test only. This tests Peppol-style invoice readiness through a sandbox provider. It does not prove final UK 2029 statutory compliance.",
-  "v1_boundary_warning": "UK Peppol sandbox test only. This tests Peppol-style invoice readiness through a sandbox provider. It does not prove final UK 2029 statutory compliance.",
+  "v1_boundary": "UK Peppol readiness XML only. Generated using Peppol BIS / EN16931-style structure based on currently announced UK Peppol direction. This does not prove final UK 2029 statutory compliance.",
+  "v1_boundary_warning": "UK Peppol readiness XML only. Generated using Peppol BIS / EN16931-style structure based on currently announced UK Peppol direction. This does not prove final UK 2029 statutory compliance.",
   "output_profiles": [
-    "storecove_peppol_sandbox_readiness_test"
+    "uk_peppol_readiness_ubl"
   ],
-  "default_output_profile": "storecove_peppol_sandbox_readiness_test",
+  "default_output_profile": "uk_peppol_readiness_ubl",
   "requires_pdf": false,
   "requires_qr": false,
   "requires_signature": false,
   "requires_live_submission_for_validity": false,
   "live_submission_supported": false,
   "official_artefact_validation": "not_configured",
-  "legal_regime_summary": "The UK pack is a 2029 Peppol roadmap pack. It records announced direction and supports a disabled-by-default Storecove sandbox readiness scaffold only; it does not implement final UK statutory compliance.",
+  "legal_regime_summary": "The UK pack is a 2029 Peppol roadmap pack. It records announced direction and now supports a local UK Peppol readiness XML output only; it does not implement final UK statutory compliance.",
   "scope": [
     "UK mandatory e-invoicing is planned for 2029.",
     "Detailed UK technical standards are still pending.",
-    "This app supports only a sandbox Peppol readiness test for UK at this stage."
+    "This app currently generates a readiness XML file only for UK at this stage."
   ],
   "mandatory_format": [
     "Peppol has been announced as the UK's core interoperability network.",
     "Final UK technical standards, profiles and implementation artefacts are not yet configured in this app.",
-    "No UK production e-invoice output is generated in V1."
+    "UK output is a Peppol BIS / EN16931-style readiness XML file only."
   ],
   "transmission_or_clearance_model": [
     "The UK is expected to follow a decentralised Peppol-style exchange model.",
     "The UK roadmap pack does not model a Saudi-style tax authority clearance flow.",
-    "Storecove integration in Milestone 5A is sandbox-readiness only and disabled unless explicitly configured."
+    "No live Peppol transmission, HMRC submission, clearance or real-time reporting is implemented."
   ],
   "qr_signature_requirements": [
     "No UK QR requirement is configured for this roadmap pack.",
     "No UK production signing, statutory approval or real-time reporting requirement is implemented."
   ],
   "retention_or_audit_notes": [
-    "Evidence must state that any UK Storecove flow is sandbox-only and does not prove final UK 2029 compliance.",
+    "Evidence must state that UK readiness XML does not prove final UK 2029 compliance.",
     "Evidence must not contain Storecove API keys or secrets.",
     "Official validation remains not configured until UK artefacts and real validator outputs are available."
   ],
   "v1_app_capability": [
-    "UK workbook upload, canonical invoice JSON construction and local validation scaffold are available.",
-    "Storecove sandbox readiness is available only when sandbox credentials are configured.",
-    "No UK production generation, Peppol transmission, HMRC submission, statutory compliance proof or live acceptance is available."
+    "UK workbook upload, canonical invoice JSON construction, local readiness validation and readiness XML generation are available.",
+    "Generated UK XML is for demonstration and readiness testing only.",
+    "No UK production Peppol transmission, HMRC submission, statutory compliance proof or live acceptance is available."
   ],
   "official_sources": [
     {
@@ -54,9 +54,9 @@
     }
   ],
   "boundary_highlights": [
-    "UK Peppol sandbox test only.",
+    "UK Peppol readiness XML only.",
     "No final UK 2029 statutory compliance claim.",
     "No production Peppol transmission or HMRC submission."
   ],
-  "last_reviewed": "2026-06-29"
+  "last_reviewed": "2026-06-30"
 }

@@ -8,7 +8,7 @@ This application is not an ERP, tax engine, Peppol access point, or live tax-aut
 
 - Belgium: generates a Peppol-style UBL XML file only. It does not transmit through Peppol.
 - Saudi Arabia: generates offline/demo ZATCA-style XML, a tags 1-5 QR image, and a visual bilingual PDF. It does not submit, clear, report, apply authority stamps, onboard a CSID, or create a production cryptographic signature.
-- United Kingdom: provides a 2029 Peppol roadmap pack and disabled-by-default Storecove sandbox-readiness scaffold only. It does not prove final UK 2029 statutory compliance.
+- United Kingdom: generates a UK Peppol readiness XML file only. It does not prove final UK 2029 statutory compliance, perform live Peppol transmission, or submit to HMRC.
 - Official artefact validation is `not_configured` unless a real validator has been configured and run. The app does not claim UBL XSD, EN 16931, Peppol Schematron, UK statutory validation, or ZATCA SDK validation.
 
 ## Project Structure
@@ -187,21 +187,27 @@ The Saudi QR encodes Base64 TLV tags 1-5 only: seller name, VAT/TIN, timestamp, 
 
 The Saudi bundle contains the workbook snapshot, canonical invoice, validation report, XML, `qr_payload_base64.txt`, `qr_payload_decoded.json`, `qr.png`, `saudi_visual_invoice.pdf`, country-pack manifest, evidence metadata, and hashes.
 
-## UK Peppol Roadmap Demo
+## UK Peppol Readiness XML Demo
 
 Product wording used in the UI and evidence:
 
 ```text
-UK Peppol sandbox test only. This tests Peppol-style invoice readiness through a sandbox provider. It does not prove final UK 2029 statutory compliance.
+UK Peppol readiness XML only. Generated using Peppol BIS / EN16931-style structure based on currently announced UK Peppol direction. This does not prove final UK 2029 statutory compliance.
 ```
 
 1. Select `United Kingdom / 2029 Peppol Roadmap`.
 2. Upload `UK-PEPPOL-SANDBOX-001.xlsx`.
-3. Select **Validate** to build canonical invoice JSON and run local UK sandbox-readiness checks.
-4. The **Send to Storecove sandbox** action remains disabled unless sandbox configuration is explicitly provided.
-5. Select **Export ZIP** for the local evidence skeleton.
+3. Select **Validate** to build canonical invoice JSON and run local UK readiness checks.
+4. Select **Generate** to create the UK Peppol readiness XML from canonical invoice JSON.
+5. Open **Generated Outputs** to view or download the XML.
+6. Select **Export ZIP** for the local evidence bundle.
+7. Open **Audit Trail** to review the UK upload, generated XML status, evidence metadata and evidence files.
 
-Milestone 5A does not perform live Storecove API calls. When Storecove sandbox settings are provided for local testing, the backend still returns a mocked Storecove sandbox response so tests do not require real credentials or network access.
+The UK evidence bundle contains the workbook snapshot, canonical invoice, validation report, UK readiness XML, `xml_validation_report.json`, country-pack manifest, evidence metadata and hashes. The XML validation framework runs XML well-formedness, basic UBL structure checks and Peppol readiness checks. UBL XSD, EN16931 and Peppol Schematron artefacts remain `not_configured` unless real validator artefacts are installed and executed.
+
+This output proves only that the app can construct a Peppol BIS / EN16931-style readiness XML from the canonical invoice model. It does not prove final UK 2029 statutory compliance, live Peppol delivery, recipient acceptance, HMRC submission, clearance or real-time reporting.
+
+The older Storecove scaffold remains disabled by default and mocked for automated tests. It is not part of the Milestone 8A UK Generate flow and does not perform production Peppol transmission.
 
 Planned environment variables:
 
@@ -213,13 +219,13 @@ STORECOVE_SENDER_LEGAL_ENTITY_ID=
 STORECOVE_RECEIVER_LEGAL_ENTITY_ID=
 ```
 
-Without those settings, the UI shows:
+Without those settings, Storecove scaffold configuration reports:
 
 ```text
 Storecove sandbox is not configured. Add sandbox credentials to enable UK Peppol testing.
 ```
 
-Production Storecove endpoints are rejected in Milestone 5A. Storecove API keys are redacted from evidence files. The UK evidence bundle can include the workbook snapshot, canonical invoice, validation report, redacted `storecove_request.json`, `storecove_response.json`, `storecove_status.json`, `provider_reference.txt`, country-pack manifest, evidence metadata, hashes, and a sandbox-only README where available.
+Production Storecove endpoints are rejected. Storecove API keys are redacted from evidence files. The normal UK readiness evidence bundle is XML-focused and does not claim Storecove, Peppol or HMRC submission.
 
 ## Audit Trail And Evidence Viewer
 
